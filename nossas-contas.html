@@ -322,7 +322,7 @@ nav.tabs button.fab .ti{width:46px;height:46px;border-radius:50%;background:var(
   <!-- ============ IMPORTAR ============ -->
   <section class="view" id="view-importar">
     <h2 style="margin:4px 4px 6px;font-size:22px">Importar fatura / extrato</h2>
-    <p class="hint" style="margin-bottom:16px">Suba o arquivo <b>OFX</b> ou <b>CSV</b> exportado pelo banco/cartão, ou cole o texto do extrato. <b>Sempre confira</b> os lançamentos na tela seguinte antes de importar.<br><br>💡 No CSV, uma coluna <b>Pagamento</b> (ex.: <span class="num">07/2026</span>) realoca a compra pro mês de pagamento — útil pra parcelas. Deixe em branco pra manter a data da compra.</p>
+    <p class="hint" style="margin-bottom:16px">Suba o arquivo <b>OFX</b> ou <b>CSV</b>, ou cole o texto do extrato. <b>Sempre confira</b> na tela seguinte antes de importar.<br><br>💡 No CSV, uma coluna <b>Parcela</b> (ex.: <span class="num">02/04</span>) joga a compra automaticamente pro mês certo: <b>data da compra + (nº da parcela − 1) meses</b>. Linhas sem parcela ficam na data da compra. Também aceita uma coluna <b>Categoria</b>.</p>
 
     <div id="importStart">
       <label class="drop" for="fileInput">
@@ -344,7 +344,7 @@ nav.tabs button.fab .ti{width:46px;height:46px;border-radius:50%;background:var(
           <div class="whopick" id="impWho"></div>
         </label>
         <label class="field" style="margin:0">
-          <span class="flabel">Mês de competência (opcional) — joga tudo pro mês do pagamento</span>
+          <span class="flabel">Mover TODOS pro mesmo mês (opcional) — só use se não tiver coluna de parcela</span>
           <div style="display:flex;gap:8px">
             <input class="input num" type="month" id="compMonth" style="flex:1">
             <button class="btn ghost" id="compClear" style="width:auto;padding:0 16px">Limpar</button>
@@ -367,7 +367,10 @@ nav.tabs button.fab .ti{width:46px;height:46px;border-radius:50%;background:var(
   <section class="view" id="view-extrato">
     <div style="display:flex;align-items:center;justify-content:space-between;margin:4px 4px 12px">
       <h2 style="font-size:22px">Extrato</h2>
-      <button id="selectToggle" style="font-size:14px;font-weight:700;color:var(--arthur)">Selecionar</button>
+      <div style="display:flex;gap:16px">
+        <button id="selectAll" style="display:none;font-size:14px;font-weight:700;color:var(--arthur)">Marcar todos</button>
+        <button id="selectToggle" style="font-size:14px;font-weight:700;color:var(--arthur)">Selecionar</button>
+      </div>
     </div>
     <div class="filterbar" id="filterDiamantes"></div>
     <div class="filterbar" id="filterPeople"></div>
@@ -504,7 +507,7 @@ const state = {
   selected: new Set(),          // ids marcados p/ excluir
 };
 
-const APP_VERSION = "v9 — 25/08/2026";
+const APP_VERSION = "v10 — 25/08/2026";
 const MASTER_PW = "284284";
 const DIAMANTES = "Diamantes LHM";   // categoria = despesas da transportadora
 
@@ -731,11 +734,13 @@ function parseCSV(text){
   // tenta identificar cabeçalho
   let header=null, start=0;
   const h0=rows[0].map(c=>c.toLowerCase());
-  if(h0.some(c=>/data|dia|descri|hist[oó]|lan[çc]|valor|montante|d[eé]bito|pagamento|compet/.test(c))){ header=h0; start=1; }
-  let iDate=-1,iDesc=-1,iVal=-1,iPay=-1;
+  if(h0.some(c=>/data|dia|descri|hist[oó]|lan[çc]|valor|montante|d[eé]bito|pagamento|compet|parcela/.test(c))){ header=h0; start=1; }
+  let iDate=-1,iDesc=-1,iVal=-1,iPay=-1,iParc=-1,iCat=-1;
   if(header){
     header.forEach((c,i)=>{
-      if(iPay<0 && /pagamento|compet[êe]ncia|refer[êe]ncia|m[eê]s\s*(pag|ref|comp)|venc/.test(c)) iPay=i;       // mês de pagamento/referência
+      if(iParc<0 && /parcela|presta[çc]|^obs|parc/.test(c)) iParc=i;
+      if(iCat<0 && /categoria|categ/.test(c)) iCat=i;
+      if(iPay<0 && /pagamento|compet[êe]ncia|refer[êe]ncia|m[eê]s\s*(pag|ref|comp)|venc/.test(c)) iPay=i;
       if(iDate<0 && /data|dia/.test(c) && i!==iPay) iDate=i;
       if(iDesc<0 && /descri|hist[oó]|lan[çc]|estabelec|t[ií]tulo|movimenta/.test(c)) iDesc=i;
       if(iVal<0 && /valor|montante|d[eé]bito|amount|quantia/.test(c)) iVal=i;
@@ -754,15 +759,33 @@ function parseCSV(text){
   const out=[];
   for(let r=start;r<rows.length;r++){
     const row=rows[r]; if(row.length<2) continue;
-    const rawDate=row[iDate]!=null?row[iDate]:"";
     const amount=parseBRNumber(row[iVal]);
     const desc=(row[iDesc]||"").trim();
-    let iso=normalizeDate(rawDate);
-    // se houver coluna de mês de pagamento preenchida, realoca o lançamento pra esse mês
-    if(iPay>=0 && row[iPay]){ const pay=payMonthToISO(row[iPay], iso); if(pay) iso=pay; }
-    if(iso && !isNaN(amount)) out.push({date:iso, amount, desc:desc||"Sem descrição", fitid:""});
+    let iso=normalizeDate(row[iDate]!=null?row[iDate]:"");
+    // PARCELA: "N/M" => desloca a data em (N-1) meses (só mexe nas linhas parceladas)
+    const parc = iParc>=0 ? String(row[iParc]||"").match(/(\d{1,2})\s*\/\s*(\d{1,2})/) : null;
+    if(parc){
+      const n=parseInt(parc[1],10);
+      if(n>=1) iso=shiftMonths(iso, n-1);
+    } else if(iParc<0 && iPay>=0 && row[iPay]){
+      // sem coluna de parcela: aceita coluna de mês de pagamento/referência
+      const pay=payMonthToISO(row[iPay], iso); if(pay) iso=pay;
+    }
+    const catForced = (iCat>=0 && row[iCat]) ? String(row[iCat]).trim() : "";
+    if(iso && !isNaN(amount)) out.push({date:iso, amount, desc:desc||"Sem descrição", fitid:"", catForced});
   }
   return out;
+}
+
+// soma k meses a uma data ISO, preservando o dia (limitado ao tamanho do mês)
+function shiftMonths(iso, k){
+  if(!iso || !k) return iso;
+  let [y,mo,d]=iso.split("-").map(Number);
+  let idx=(mo-1)+k;
+  y += Math.floor(idx/12); idx=((idx%12)+12)%12;
+  const last=new Date(y, idx+1, 0).getDate();
+  d=Math.min(d, last);
+  return `${y}-${String(idx+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
 }
 
 // interpreta "mês de pagamento" em vários formatos e devolve uma data ISO nesse mês
@@ -856,7 +879,8 @@ function buildReview(txns){
     const isPayment=/pagamento\s+(de\s+)?fatura|pgto.*fatura|estorno|\bsaldo\b|saldo do dia|fatura anterior|cr[eé]dito de pagamento|rendimento|rend\s*pago|resgate/i.test(t.desc);
     const s=suggestCategory(t.desc);
     let cat=s.cat, learned=s.learned;
-    if(cat==="Outros" && t.catHint){ cat=t.catHint; learned=false; }  // usa categoria do banco como reforço
+    if(t.catForced && state.settings.categories.includes(t.catForced)){ cat=t.catForced; learned=false; }  // categoria vinda do CSV manda
+    else if(cat==="Outros" && t.catHint){ cat=t.catHint; learned=false; }  // usa categoria do banco como reforço
     rows.push({
       date:t.date, amount:Math.abs(t.amount), rawAmount:t.amount, desc:t.desc, importKey:key,
       category:cat, learned:learned,
@@ -986,6 +1010,16 @@ function renderExtrato(){
   const head=`<div class="catrow" style="background:var(--bg)"><span class="cname">${list.length} lançamentos</span><span class="camt num">${money(total)}</span></div>`;
   el("fullList").innerHTML = list.length ? head+list.map(txRow).join("") : emptyBlock("🔍","Nada por aqui","Ajuste os filtros ou lance uma despesa");
   bindTxRows("fullList");
+
+  // botão "marcar todos" (respeita os filtros atuais)
+  const selAll=el("selectAll");
+  selAll.style.display = state.selectMode ? "" : "none";
+  if(state.selectMode){
+    const ids=list.map(e=>e.id);
+    const allOn = ids.length>0 && ids.every(id=>state.selected.has(id));
+    selAll.textContent = allOn ? "Limpar" : "Marcar todos";
+    selAll.onclick=()=>{ if(allOn) ids.forEach(id=>state.selected.delete(id)); else ids.forEach(id=>state.selected.add(id)); renderExtrato(); };
+  }
   updateSelBar();
 }
 
