@@ -20,12 +20,12 @@
 <!-- =================================================================== -->
 <script>
 window.FIREBASE_CONFIG = {
-  apiKey: "AIzaSyC2dPU4lZUelyCMCY0hyLDCBTwHW7PDGuw",
-  authDomain: "nossas-contas-6c240.firebaseapp.com",
-  projectId: "nossas-contas-6c240",
-  storageBucket: "nossas-contas-6c240.firebasestorage.app",
-  messagingSenderId: "553757944177",
-  appId: "1:553757944177:web:016e77aaf412609a02eed0"
+  apiKey: "",
+  authDomain: "",
+  projectId: "",
+  storageBucket: "",
+  messagingSenderId: "",
+  appId: ""
 };
 // Deixe como está pra separar dos seus outros apps. Coleção usada: "gastos_familia".
 window.FIREBASE_ROOT = "gastos_familia";
@@ -151,7 +151,10 @@ textarea.input{resize:vertical;min-height:80px}
 .reviewrow .rmid{flex:1;min-width:0}
 .reviewrow .rdesc{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .reviewrow .rsel{font-size:13px;color:var(--muted);margin-top:4px;display:flex;gap:6px;flex-wrap:wrap}
-.reviewrow select{font-size:12px;padding:5px 7px;border-radius:8px;border:1px solid var(--line);background:var(--bg);max-width:150px}
+.reviewrow select{font-size:12px;padding:5px 7px;border-radius:8px;border:1px solid var(--line);background:var(--bg);max-width:140px}
+.reviewrow .rdate{font-size:11px;padding:4px 6px;border-radius:8px;border:1px solid var(--line);background:var(--bg);width:112px}
+.reviewrow .ramt-input{width:84px;flex:none;font-weight:700;font-size:14px;text-align:right;border:1px solid var(--line);border-radius:8px;padding:7px 8px;background:var(--bg)}
+.reviewrow .ramt-input:focus{outline:none;border-color:var(--arthur)}
 .reviewrow .ramt{font-weight:700;font-size:14px;white-space:nowrap}
 .learned{font-size:10px;font-weight:800;color:#0F766E;background:var(--arthur-soft);padding:2px 5px;border-radius:5px}
 
@@ -302,14 +305,14 @@ nav.tabs button.fab .ti{width:46px;height:46px;border-radius:50%;background:var(
   <!-- ============ IMPORTAR ============ -->
   <section class="view" id="view-importar">
     <h2 style="margin:4px 4px 6px;font-size:22px">Importar fatura / extrato</h2>
-    <p class="hint" style="margin-bottom:16px">Exporte o arquivo <b>OFX</b> ou <b>CSV</b> pelo app do seu banco ou cartão e suba aqui. Também dá pra colar o texto do extrato.</p>
+    <p class="hint" style="margin-bottom:16px">Suba o <b>PDF</b> do extrato ou da fatura — ou, pra máxima precisão, o <b>OFX/CSV</b> exportado pelo banco. Também dá pra colar o texto. <b>Sempre confira</b> os lançamentos na tela seguinte antes de importar.</p>
 
     <div id="importStart">
       <label class="drop" for="fileInput">
         <div style="font-size:32px">📄</div>
-        <div class="big">Escolher arquivo OFX ou CSV</div>
+        <div class="big">Escolher arquivo PDF, OFX ou CSV</div>
         <div class="sub">Toque para selecionar do aparelho</div>
-        <input type="file" id="fileInput" accept=".ofx,.csv,.txt" style="display:none">
+        <input type="file" id="fileInput" accept=".pdf,.ofx,.csv,.txt" style="display:none">
       </label>
 
       <div class="section-title">Ou colar texto</div>
@@ -556,6 +559,7 @@ function recordLearning(desc,category){
  *  CAMADA DE DADOS  (local  ⇄  firebase)                               *
  * ==================================================================== */
 let fb=null; // preenchido se o firebase estiver configurado
+let fbError=null; // guarda o motivo se a conexão falhar
 
 const Local = {
   load(){
@@ -576,8 +580,12 @@ async function initData(){
   if(cfg && cfg.apiKey && cfg.projectId){
     try{
       const {initializeApp}=await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
+      const A=await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
       const M=await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
       const app=initializeApp(cfg);
+      // login anônimo — exigido pelas regras de segurança do Firestore
+      const auth=A.getAuth(app);
+      await A.signInAnonymously(auth);
       const db=M.initializeFirestore(app,{localCache:M.persistentLocalCache()});
       const root=window.FIREBASE_ROOT||"gastos_familia";
       fb={db,M,
@@ -585,16 +593,19 @@ async function initData(){
         learnDoc:M.doc(db,root,"aprendizado"),
         setDoc:M.doc(db,root,"config")
       };
-      state.mode="firebase";
+      state.mode="firebase"; fbError=null;
       // ouvintes em tempo real
       M.onSnapshot(fb.expCol,snap=>{
         state.expenses=snap.docs.map(d=>({id:d.id,...d.data()}));
         renderAll();
-      });
+      },err=>{ fbError=err.code||"erro de leitura"; renderAll(); });
       M.onSnapshot(fb.learnDoc,d=>{ if(d.exists()) state.learn=d.data().map||{}; renderAll(); });
       M.onSnapshot(fb.setDoc,d=>{ if(d.exists()&&d.data().people) state.settings=d.data(); ensureCats(); renderAll(); });
       return;
-    }catch(e){ console.error("Firebase falhou, usando modo local:",e); }
+    }catch(e){
+      console.error("Firebase falhou, usando modo local:",e);
+      fbError = e.code || e.message || "erro ao conectar";
+    }
   }
   state.mode="local";
   Local.load();
@@ -705,20 +716,97 @@ function normalizeDate(s){
 }
 
 // texto livre colado: procura data ... descrição ... valor por linha
-function parsePaste(text){
+// meses abreviados (faturas usam "15 AGO")
+const MES_ABR={jan:0,fev:1,mar:2,abr:3,mai:4,jun:5,jul:6,ago:7,set:8,out:9,nov:10,dez:11};
+// valor monetário no padrão brasileiro (1.234,56 / 52,30), com R$/sinal/parênteses opcionais
+const VAL_RE=/-?\(?\s*R?\$?\s*\d{1,3}(?:\.\d{3})*,\d{2}\)?|-?\(?\s*R?\$?\s*\d+,\d{2}\)?/g;
+
+// Parser genérico de linhas de extrato OU fatura.
+// Pega a data (DD/MM[/AAAA] ou "DD MMM") e o PRIMEIRO valor da linha
+// (em extrato costuma ser valor antes do saldo; em fatura só há um valor).
+function parseLines(rawLines){
   const out=[];
-  for(const line of text.split(/\r?\n/)){
-    const t=line.trim(); if(!t) continue;
-    const dm=t.match(/(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)/);
-    const vm=t.match(/(-?\s*R?\$?\s*\d{1,3}(?:\.\d{3})*(?:,\d{2})|-?\s*R?\$?\s*\d+[.,]\d{2})\s*$/);
-    if(!vm) continue;
-    let iso=""; if(dm){ let d=dm[1]; if(!/\d{2,4}$/.test(d.split(/[\/\-]/).pop())) d+="/"+new Date().getFullYear(); iso=normalizeDate(d); }
-    if(!iso) iso=todayISO();
-    const amount=parseBRNumber(vm[1]);
-    let desc=t.replace(vm[0],"").replace(dm?dm[0]:"","").replace(/\s{2,}/g," ").trim();
-    if(!isNaN(amount)) out.push({date:iso, amount, desc:desc||"Sem descrição", fitid:""});
+  const now=new Date(), curY=now.getFullYear();
+  for(const raw of rawLines){
+    const line=(raw||"").replace(/\s+/g," ").trim();
+    if(line.length<5) continue;
+    const vals=line.match(VAL_RE);
+    if(!vals) continue;
+    const valStr=vals[0];                 // primeiro valor da linha
+    const amount=parseBRNumber(valStr);
+    if(isNaN(amount)||amount===0) continue;
+
+    let iso="", dateToken="";
+    // 1º tenta "DD MMM" (fatura) — evita confundir parcela "01/03" com data
+    const am=line.match(/\b(\d{1,2})\s*(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\b/i);
+    if(am){ const d=am[1], mo=MES_ABR[am[2].toLowerCase()];
+      let y=curY; if(mo>now.getMonth()) y=curY-1;   // ex.: fatura de dez vista em ago => ano anterior
+      iso=`${y}-${String(mo+1).padStart(2,"0")}-${d.padStart(2,"0")}`; dateToken=am[0]; }
+    // senão, data numérica DD/MM[/AAAA] (extrato)
+    if(!iso){
+      const dm=line.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/);
+      if(dm){ let d=dm[1], mo=dm[2], y=dm[3]||String(curY); if(y.length===2) y="20"+y;
+        if(+mo>=1 && +mo<=12 && +d>=1 && +d<=31){ iso=`${y}-${mo.padStart(2,"0")}-${d.padStart(2,"0")}`; dateToken=dm[0]; } }
+    }
+    if(!iso) continue;   // sem data reconhecível => provável cabeçalho/rodapé, ignora
+
+    // descrição = linha sem a data e sem os valores
+    let desc=line;
+    if(dateToken) desc=desc.replace(dateToken,"");
+    vals.forEach(v=>{ desc=desc.replace(v,""); });
+    desc=desc.replace(/\b[DC]\b/g,"").replace(/R\$/gi,"").replace(/\s+/g," ").trim();
+    desc=desc.replace(/^[-–•\|\.\s]+/,"").replace(/[-–•\|\.\s]+$/,"").trim();
+    out.push({date:iso, amount, desc:desc||"Sem descrição", fitid:""});
   }
   return out;
+}
+function parsePaste(text){ return parseLines(text.split(/\r?\n/)); }
+
+// ---- Leitor de PDF (pdf.js via CDN) ----
+const PDFJS_VER="4.10.38";
+let _pdfjs=null;
+async function loadPdfJs(){
+  if(_pdfjs) return _pdfjs;
+  // polyfill p/ navegadores um pouco mais antigos
+  if(typeof Promise.withResolvers==="undefined"){
+    Promise.withResolvers=function(){let a,b;const p=new Promise((r,j)=>{a=r;b=j;});return {promise:p,resolve:a,reject:b};};
+  }
+  const lib=await import(`https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VER}/build/pdf.min.mjs`);
+  lib.GlobalWorkerOptions.workerSrc=`https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VER}/build/pdf.worker.min.mjs`;
+  _pdfjs=lib; return lib;
+}
+// reconstrói linhas agrupando os fragmentos por posição vertical (y)
+function itemsToLines(items){
+  const buckets=[];
+  items.forEach(it=>{
+    const s=(it.str||""); if(!s.trim()) return;
+    const y=it.transform[5], x=it.transform[4];
+    let b=buckets.find(bk=>Math.abs(bk.y-y)<=3);
+    if(!b){ b={y, parts:[]}; buckets.push(b); }
+    b.parts.push({x, s});
+  });
+  buckets.sort((a,b)=>b.y-a.y); // de cima p/ baixo
+  return buckets.map(b=>b.parts.sort((a,c)=>a.x-c.x).map(p=>p.s).join(" ").replace(/\s+/g," ").trim());
+}
+async function handlePDF(file){
+  toast("Lendo PDF…");
+  try{
+    const pdfjsLib=await loadPdfJs();
+    const buf=await file.arrayBuffer();
+    const pdf=await pdfjsLib.getDocument({data:new Uint8Array(buf)}).promise;
+    let lines=[];
+    for(let p=1;p<=pdf.numPages;p++){
+      const page=await pdf.getPage(p);
+      const tc=await page.getTextContent();
+      lines=lines.concat(itemsToLines(tc.items));
+    }
+    const rows=parseLines(lines);
+    if(!rows.length){ toast("Não identifiquei lançamentos nesse PDF"); return; }
+    showReview(buildReview(rows));
+  }catch(e){
+    console.error("Erro ao ler PDF:",e);
+    toast("Não consegui ler esse PDF. Tente o OFX/CSV ou colar o texto.");
+  }
 }
 
 function existingKeys(){
@@ -886,11 +974,14 @@ function renderAjustes(){
     ? `Já aprendi <b>${learnCount}</b> estabelecimento(s) a partir de <b>${totalAssoc}</b> classificação(ões) suas. Quanto mais você confirma, mais preciso fica.`
     : `Ainda não aprendi nada. Conforme você classifica os lançamentos importados, eu passo a sugerir sozinho.`;
 
-  el("modePill").textContent = state.mode==="firebase" ? "sincronizado" : "local";
-  el("modePill").classList.toggle("sync", state.mode==="firebase");
-  el("syncHint").innerHTML = state.mode==="firebase"
+  el("modePill").textContent = state.mode==="firebase" ? (fbError?"erro":"sincronizado") : "local";
+  el("modePill").classList.toggle("sync", state.mode==="firebase" && !fbError);
+  const cfgd = window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey;
+  el("syncHint").innerHTML = state.mode==="firebase" && !fbError
     ? "✅ Sincronizando com a Luana em tempo real."
-    : "ℹ️ Modo local: os dados ficam só neste aparelho. Configure o Firebase (bloco no topo do arquivo) pra compartilhar com a Luana.";
+    : (cfgd && fbError
+      ? `⚠️ Firebase configurado, mas houve um erro ao conectar: <b>${fbError}</b>.<br>Verifique se você <b>ativou a Autenticação Anônima</b> e <b>criou o Firestore</b> no console, e se está online. Recarregue o app depois de corrigir.`
+      : "ℹ️ Modo local: os dados ficam só neste aparelho. Configure o Firebase (bloco no topo do arquivo) pra compartilhar com a Luana.");
 }
 
 function renderAll(){
@@ -1118,18 +1209,24 @@ function renderReviewList(){
       <div class="rmid">
         <div class="rdesc">${r.desc}</div>
         <div class="rsel">
-          <span class="num">${fmtDateBR(r.date)}</span>
+          <input type="date" class="rdate" data-date="${i}" value="${r.date}">
           <select data-cat="${i}">${catOptions.replace(`>${r.category}<`,` selected>${r.category}<`)}</select>
           ${r.learned?'<span class="learned">aprendido</span>':''}
         </div>
       </div>
-      <div class="ramt num">${money(r.amount)}</div>
+      <input class="ramt-input num" data-amt="${i}" inputmode="decimal" value="${r.amount.toFixed(2).replace('.',',')}">
     </div>`).join("");
   el("reviewList").querySelectorAll("[data-chk]").forEach(c=>c.onclick=()=>{
     const i=+c.dataset.chk; state.review[i].include=!state.review[i].include; renderReviewList();
   });
   el("reviewList").querySelectorAll("[data-cat]").forEach(s=>s.onchange=()=>{
     state.review[+s.dataset.cat].category=s.value;
+  });
+  el("reviewList").querySelectorAll("[data-date]").forEach(d=>d.onchange=()=>{
+    if(d.value) state.review[+d.dataset.date].date=d.value;
+  });
+  el("reviewList").querySelectorAll("[data-amt]").forEach(a=>{
+    a.onchange=()=>{ const n=parseBRNumber(a.value); if(!isNaN(n)&&n>0){ state.review[+a.dataset.amt].amount=n; a.value=n.toFixed(2).replace(".",","); } };
   });
 }
 function resetImport(){
@@ -1140,8 +1237,12 @@ function resetImport(){
 }
 
 async function handleFile(file){
+  const name=(file.name||"").toLowerCase();
+  if(name.endsWith(".pdf")){ await handlePDF(file); return; }
   const text=await file.text();
-  const rows = /<OFX>|<STMTTRN>/i.test(text) ? parseOFX(text) : parseCSV(text);
+  const rows = /<OFX>|<STMTTRN>/i.test(text) ? parseOFX(text)
+             : name.endsWith(".csv") ? parseCSV(text)
+             : parseLines(text.split(/\r?\n/));
   showReview(buildReview(rows));
 }
 
@@ -1248,8 +1349,9 @@ el("fValor").addEventListener("focus",()=>{
 (async function init(){
   await initData();
   ensureCats();
-  el("modePill").textContent = state.mode==="firebase" ? "sincronizado" : "local";
-  el("modePill").classList.toggle("sync", state.mode==="firebase");
+  el("modePill").textContent = state.mode==="firebase" ? (fbError?"erro":"sincronizado") : "local";
+  el("modePill").classList.toggle("sync", state.mode==="firebase" && !fbError);
+  if(fbError) toast("Firebase: erro ao conectar — veja os Ajustes");
   renderAll();
 })();
 </script>
