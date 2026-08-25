@@ -339,9 +339,16 @@ nav.tabs button.fab .ti{width:46px;height:46px;border-radius:50%;background:var(
 
     <div id="importReview" style="display:none">
       <div class="card" style="padding:14px;margin-bottom:14px">
-        <label class="field" style="margin:0">
+        <label class="field" style="margin:0 0 12px">
           <span class="flabel">Lançar tudo como</span>
           <div class="whopick" id="impWho"></div>
+        </label>
+        <label class="field" style="margin:0">
+          <span class="flabel">Mês de competência (opcional) — joga tudo pro mês do pagamento</span>
+          <div style="display:flex;gap:8px">
+            <input class="input num" type="month" id="compMonth" style="flex:1">
+            <button class="btn ghost" id="compClear" style="width:auto;padding:0 16px">Limpar</button>
+          </div>
         </label>
       </div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin:0 4px 8px">
@@ -497,7 +504,7 @@ const state = {
   selected: new Set(),          // ids marcados p/ excluir
 };
 
-const APP_VERSION = "v8 — 25/08/2026";
+const APP_VERSION = "v9 — 25/08/2026";
 const MASTER_PW = "284284";
 const DIAMANTES = "Diamantes LHM";   // categoria = despesas da transportadora
 
@@ -728,7 +735,7 @@ function parseCSV(text){
   let iDate=-1,iDesc=-1,iVal=-1,iPay=-1;
   if(header){
     header.forEach((c,i)=>{
-      if(iPay<0 && /pagamento|compet[êe]ncia|m[eê]s\s*pag|venc/.test(c)) iPay=i;       // mês de pagamento
+      if(iPay<0 && /pagamento|compet[êe]ncia|refer[êe]ncia|m[eê]s\s*(pag|ref|comp)|venc/.test(c)) iPay=i;       // mês de pagamento/referência
       if(iDate<0 && /data|dia/.test(c) && i!==iPay) iDate=i;
       if(iDesc<0 && /descri|hist[oó]|lan[çc]|estabelec|t[ií]tulo|movimenta/.test(c)) iDesc=i;
       if(iVal<0 && /valor|montante|d[eé]bito|amount|quantia/.test(c)) iVal=i;
@@ -1261,6 +1268,7 @@ function openEditSheet(id){
  * ==================================================================== */
 function showReview(rows){
   if(!rows.length){ toast("Nenhum lançamento novo encontrado"); return; }
+  rows.forEach(r=>{ r.origDate=r.date; });   // guarda a data original p/ reverter/competência
   state.review=rows;
   el("importStart").style.display="none";
   el("importReview").style.display="block";
@@ -1273,6 +1281,19 @@ function showReview(rows){
     b.classList.add("sel"); iw.dataset.sel=b.dataset.p;
   });
   iw.querySelector("button").classList.add("sel"); iw.dataset.sel=state.settings.people[0];
+  // mês de competência (opcional): joga todos os lançamentos pro mês escolhido
+  el("compMonth").value="";
+  el("compMonth").onchange=()=>{
+    const ym=el("compMonth").value;   // "YYYY-MM"
+    state.review.forEach(r=>{
+      if(ym){ const [y,mo]=ym.split("-"); const day=(r.origDate||r.date).slice(8,10);
+        const last=new Date(+y,+mo,0).getDate();
+        r.date=`${y}-${mo}-${String(Math.min(+day||1,last)).padStart(2,"0")}`; }
+      else r.date=r.origDate||r.date;
+    });
+    renderReviewList();
+  };
+  el("compClear").onclick=()=>{ el("compMonth").value=""; state.review.forEach(r=>r.date=r.origDate||r.date); renderReviewList(); };
   renderReviewList();
 }
 function renderReviewList(){
