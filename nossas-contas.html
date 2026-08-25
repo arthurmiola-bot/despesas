@@ -646,6 +646,7 @@ async function persistSettings(){
 function ensureCats(){
   if(!state.settings.categories || !state.settings.categories.length)
     state.settings.categories=[...DEFAULT_CATS];
+  state.settings.categories.sort((a,b)=>a.localeCompare(b,"pt-BR",{sensitivity:"base"}));
 }
 
 /* ==================================================================== *
@@ -1370,7 +1371,7 @@ el("confirmImport").onclick=()=>{
 /* ajustes: categorias */
 el("addCat").onclick=()=>{
   const v=el("newCat").value.trim();
-  if(v && !state.settings.categories.includes(v)){ state.settings.categories.push(v); persistSettings(); el("newCat").value=""; renderAjustes(); }
+  if(v && !state.settings.categories.includes(v)){ state.settings.categories.push(v); ensureCats(); persistSettings(); el("newCat").value=""; renderAjustes(); }
 };
 
 /* backup */
