@@ -36,6 +36,7 @@ window.FIREBASE_ROOT = "gastos_familia";
   --bg:#F5F2EC; --surface:#FFFFFF; --ink:#1C1917; --muted:#78716C;
   --line:#E7E2D8; --arthur:#0D9488; --luana:#E11D57;
   --arthur-soft:#CCFBF1; --luana-soft:#FCE7EF;
+  --diam:#6D28D9; --diam-soft:#EDE9FE;
   --good:#15803D; --bad:#B91C1C; --shadow:0 1px 3px rgba(28,25,23,.08),0 1px 2px rgba(28,25,23,.04);
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -245,6 +246,21 @@ nav.tabs button.fab .ti{width:46px;height:46px;border-radius:50%;background:var(
 .selbar button.del{background:#EF4444}
 .tx .txchk{width:22px;height:22px;flex:none;border-radius:6px;border:2px solid var(--line);display:grid;place-items:center;font-size:14px}
 .tx.picked .txchk{background:var(--arthur);border-color:var(--arthur);color:#fff}
+/* Diamantes / Pessoal no card do topo */
+.split{flex-wrap:wrap}
+.split .person.diam{background:var(--diam-soft)}
+.dot.diam{background:var(--diam)}
+.split .person.diam .who{color:#5B21B6}
+.pd-chips{display:flex;gap:10px;margin-top:14px}
+.pd-chip{flex:1;display:flex;flex-direction:column;align-items:flex-start;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:9px 12px}
+.pd-chip .pdl{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.pd-chip .pdv{font-size:16px;font-weight:800;margin-top:2px}
+.pd-chip#diamChip .pdv{color:var(--diam)}
+/* Categoria expansível no card Início */
+.catrow.expandable{cursor:pointer}
+.catrow .chev{color:var(--muted);font-size:12px;width:16px;text-align:center;flex:none}
+.catchildren .tx{padding-left:24px;background:var(--bg)}
+.catchildren .tx:last-child{border-bottom:1px solid var(--line)}
 </style>
 </head>
 <body>
@@ -269,6 +285,10 @@ nav.tabs button.fab .ti{width:46px;height:46px;border-radius:50%;background:var(
     <div class="card total-card">
       <div class="lbl">Total do mês</div>
       <div class="val num" id="mTotal">R$ 0,00</div>
+      <div class="pd-chips" id="pdChips">
+        <div class="pd-chip"><span class="pdl">Pessoal</span><span class="pdv num" id="totPessoal">R$ 0,00</span></div>
+        <div class="pd-chip" id="diamChip"><span class="pdl">Diamantes</span><span class="pdv num" id="totDiam">R$ 0,00</span></div>
+      </div>
       <div class="split">
         <div class="person arthur">
           <div class="who"><span class="dot arthur"></span><span id="lblA">Arthur</span></div>
@@ -278,11 +298,13 @@ nav.tabs button.fab .ti{width:46px;height:46px;border-radius:50%;background:var(
           <div class="who"><span class="dot luana"></span><span id="lblL">Luana</span></div>
           <div class="amt num" id="totL">R$ 0,00</div>
         </div>
+        <div class="person diam" id="diamBox">
+          <div class="who"><span class="dot diam"></span>Diamantes LHM</div>
+          <div class="amt num" id="totD">R$ 0,00</div>
+        </div>
       </div>
-      <div class="splitbar"><i id="barA" style="background:var(--arthur)"></i><i id="barL" style="background:var(--luana)"></i></div>
+      <div class="splitbar"><i id="barA" style="background:var(--arthur)"></i><i id="barL" style="background:var(--luana)"></i><i id="barD" style="background:var(--diam)"></i></div>
     </div>
-
-    <button class="btn ghost" id="goImport" style="margin-bottom:4px">📥 Importar fatura ou extrato</button>
 
     <div class="section-title">Por categoria</div>
     <div class="card" id="catBreakdown"></div>
@@ -294,6 +316,7 @@ nav.tabs button.fab .ti{width:46px;height:46px;border-radius:50%;background:var(
   <!-- ============ LANÇAR ============ -->
   <section class="view" id="view-lancar">
     <h2 style="margin:4px 4px 16px;font-size:22px">Novo lançamento</h2>
+    <button class="btn ghost" id="goImport" style="margin-bottom:18px">📥 Importar fatura ou extrato</button>
     <label class="field">
       <span class="flabel">Valor</span>
       <input class="input amount-input num" id="fValor" inputmode="decimal" placeholder="R$ 0,00">
@@ -505,9 +528,10 @@ const state = {
   unlocked: false,              // senha master já digitada nesta sessão
   selectMode: false,            // modo seleção múltipla no Extrato
   selected: new Set(),          // ids marcados p/ excluir
+  expandedCats: new Set(),      // categorias abertas no card Início
 };
 
-const APP_VERSION = "v10 — 25/08/2026";
+const APP_VERSION = "v13 — 25/08/2026";
 const MASTER_PW = "284284";
 const DIAMANTES = "Diamantes LHM";   // categoria = despesas da transportadora
 
@@ -867,7 +891,7 @@ function existingKeys(){
   state.expenses.forEach(e=>{ if(e.importKey) set.add(e.importKey); });
   return set;
 }
-function makeImportKey(t){ return t.fitid ? "f:"+t.fitid : `${t.date}|${Math.abs(t.amount).toFixed(2)}|${merchantKey(t.desc)}`; }
+function makeImportKey(t){ return t.fitid ? "f:"+t.fitid : `${t.date}|${(+t.amount).toFixed(2)}|${merchantKey(t.desc)}`; }
 
 function buildReview(txns){
   const seen=existingKeys();
@@ -876,15 +900,17 @@ function buildReview(txns){
     const key=makeImportKey(t);
     if(seen.has(key)) continue;                          // pula duplicados já lançados
     seen.add(key);
-    const isPayment=/pagamento\s+(de\s+)?fatura|pgto.*fatura|estorno|\bsaldo\b|saldo do dia|fatura anterior|cr[eé]dito de pagamento|rendimento|rend\s*pago|resgate/i.test(t.desc);
+    // desmarca automaticamente só o que não é despesa (pagamento de fatura, saldo, rendimento...).
+    // Estorno NÃO entra aqui: ele é um crédito real e entra com valor negativo.
+    const isNoise=/pagamento\s+(de\s+)?fatura|pgto.*fatura|\bsaldo\b|saldo do dia|fatura anterior|cr[eé]dito de pagamento|rendimento|rend\s*pago|resgate/i.test(t.desc);
     const s=suggestCategory(t.desc);
     let cat=s.cat, learned=s.learned;
     if(t.catForced && state.settings.categories.includes(t.catForced)){ cat=t.catForced; learned=false; }  // categoria vinda do CSV manda
     else if(cat==="Outros" && t.catHint){ cat=t.catHint; learned=false; }  // usa categoria do banco como reforço
     rows.push({
-      date:t.date, amount:Math.abs(t.amount), rawAmount:t.amount, desc:t.desc, importKey:key,
+      date:t.date, amount:t.amount, rawAmount:t.amount, desc:t.desc, importKey:key,   // preserva o sinal (estorno = negativo)
       category:cat, learned:learned,
-      include: !isPayment && Math.abs(t.amount)>0,
+      include: !isNoise && t.amount!==0,
     });
   }
   rows.sort((a,b)=>a.date<b.date?1:-1);
@@ -908,15 +934,29 @@ function renderInicio(){
   const exps=monthExpenses();
   const total=exps.reduce((s,e)=>s+e.amount,0);
   const p0=state.settings.people[0], p1=state.settings.people[1];
-  const tA=exps.filter(e=>e.person===p0).reduce((s,e)=>s+e.amount,0);
-  const tL=exps.filter(e=>e.person===p1).reduce((s,e)=>s+e.amount,0);
-  el("mTotal").textContent=money(total);
-  el("lblA").textContent=p0; el("lblL").textContent=p1;
-  el("totA").textContent=money(tA); el("totL").textContent=money(tL);
-  const denom=(tA+tL)||1;
-  el("barA").style.width=(tA/denom*100)+"%"; el("barL").style.width=(tL/denom*100)+"%";
+  const isDiam=e=>e.category===DIAMANTES;
+  // Diamantes por pessoa é subtraído de quem gastou
+  const sum=arr=>arr.reduce((s,e)=>s+e.amount,0);
+  const tA=sum(exps.filter(e=>e.person===p0 && !isDiam(e)));   // Arthur pessoal (sem Diamantes)
+  const tL=sum(exps.filter(e=>e.person===p1 && !isDiam(e)));   // Luana pessoal (sem Diamantes)
+  const tD=sum(exps.filter(isDiam));                            // Diamantes (de qualquer um)
+  const pessoal=tA+tL;
 
-  // categorias
+  el("mTotal").textContent=money(total);
+  el("totPessoal").textContent=money(pessoal);
+  el("totDiam").textContent=money(tD);
+  el("lblA").textContent=p0; el("lblL").textContent=p1;
+  el("totA").textContent=money(tA); el("totL").textContent=money(tL); el("totD").textContent=money(tD);
+  // esconde os elementos de Diamantes quando não há nada
+  el("diamBox").style.display = tD!==0 ? "" : "none";
+  el("diamChip").style.display = tD!==0 ? "" : "none";
+  el("pdChips").style.display = tD!==0 ? "" : "none";
+  const denom=(Math.abs(tA)+Math.abs(tL)+Math.abs(tD))||1;
+  el("barA").style.width=(Math.abs(tA)/denom*100)+"%";
+  el("barL").style.width=(Math.abs(tL)/denom*100)+"%";
+  el("barD").style.width=(Math.abs(tD)/denom*100)+"%";
+
+  // categorias (expansíveis)
   const byCat={};
   exps.forEach(e=>byCat[e.category]=(byCat[e.category]||0)+e.amount);
   const cats=Object.keys(byCat).sort((a,b)=>byCat[b]-byCat[a]);
@@ -925,14 +965,27 @@ function renderInicio(){
   else{
     cb.innerHTML=cats.map(c=>{
       const pct=Math.round(byCat[c]/(total||1)*100);
-      return `<div class="catrow">
+      const open=state.expandedCats.has(c);
+      let html=`<div class="catrow expandable" data-cat="${c}">
         <span class="swatch" style="background:${catColor(c)}"></span>
         <span class="cname">${c}</span>
         <span class="camt num">${money(byCat[c])}</span>
         <span class="cpct num">${pct}%</span>
+        <span class="chev">${open?'▾':'▸'}</span>
         <span class="cbar" style="width:${pct}%;background:${catColor(c)}"></span>
       </div>`;
+      if(open){
+        const txs=exps.filter(e=>e.category===c).sort((a,b)=> a.date<b.date?1:(a.date>b.date?-1:(b.createdAt||0)-(a.createdAt||0)));
+        html+=`<div class="catchildren">`+txs.map(txRow).join("")+`</div>`;
+      }
+      return html;
     }).join("");
+    cb.querySelectorAll(".catrow.expandable").forEach(r=>r.onclick=()=>{
+      const c=r.dataset.cat;
+      if(state.expandedCats.has(c)) state.expandedCats.delete(c); else state.expandedCats.add(c);
+      renderInicio();
+    });
+    bindTxRows("catBreakdown");   // toca numa despesa -> editar/excluir (senha)
   }
 
   // recentes
@@ -1288,7 +1341,7 @@ function openEditSheet(id){
     </div>`);
   el("eSave").onclick=()=>gate(()=>{
     const val=parseBRNumber(el("eVal").value);
-    if(isNaN(val)||val<=0){ toast("Valor inválido"); return; }
+    if(isNaN(val)||val===0){ toast("Valor inválido"); return; }
     const newCat=el("eCat").value;
     if(newCat!==e.category) { recordLearning(el("eDesc").value, newCat); persistLearn(); }  // corrigir também ensina
     updateExpense(id,{amount:val,desc:el("eDesc").value.trim(),category:newCat,person:el("eWho").value,date:el("eData").value});
@@ -1358,7 +1411,7 @@ function renderReviewList(){
     if(d.value) state.review[+d.dataset.date].date=d.value;
   });
   el("reviewList").querySelectorAll("[data-amt]").forEach(a=>{
-    a.onchange=()=>{ const n=parseBRNumber(a.value); if(!isNaN(n)&&n>0){ state.review[+a.dataset.amt].amount=n; a.value=n.toFixed(2).replace(".",","); } };
+    a.onchange=()=>{ const n=parseBRNumber(a.value); if(!isNaN(n)&&n!==0){ state.review[+a.dataset.amt].amount=n; a.value=n.toFixed(2).replace(".",","); } };
   });
 }
 function resetImport(){
@@ -1417,7 +1470,7 @@ el("fSalvar").onclick=()=>{
   const val=parseBRNumber(el("fValor").value);
   const cat=el("fCats").dataset.sel;
   const who=el("fWho").dataset.sel;
-  if(isNaN(val)||val<=0){ toast("Digite um valor válido"); return; }
+  if(isNaN(val)||val===0){ toast("Digite um valor válido"); return; }
   if(!cat){ toast("Escolha uma categoria"); return; }
   const desc=el("fDesc").value.trim();
   addExpense({date:el("fData").value||todayISO(),amount:val,category:cat,person:who,desc,importKey:"",createdAt:Date.now()});
@@ -1480,7 +1533,7 @@ el("importBackup").onchange=async e=>{
 /* máscara simples de valor no lançamento */
 el("fValor").addEventListener("blur",()=>{
   const n=parseBRNumber(el("fValor").value);
-  if(!isNaN(n)&&n>0) el("fValor").value=money(n);
+  if(!isNaN(n)&&n!==0) el("fValor").value=money(n);
 });
 el("fValor").addEventListener("focus",()=>{
   const n=parseBRNumber(el("fValor").value);
