@@ -261,6 +261,19 @@ nav.tabs button.fab .ti{width:46px;height:46px;border-radius:50%;background:var(
 .catrow .chev{color:var(--muted);font-size:12px;width:16px;text-align:center;flex:none}
 .catchildren .tx{padding-left:24px;background:var(--bg)}
 .catchildren .tx:last-child{border-bottom:1px solid var(--line)}
+/* Card do topo como filtro */
+.total-card [data-filter]{cursor:pointer;transition:box-shadow .15s,transform .1s}
+.total-card [data-filter]:active{transform:scale(.99)}
+.totlbl-wrap{border-radius:12px;padding:2px 6px}
+.totlbl-wrap.sel{background:var(--bg)}
+.person.sel.arthur{box-shadow:0 0 0 2px var(--arthur)}
+.person.sel.luana{box-shadow:0 0 0 2px var(--luana)}
+.person.sel.diam{box-shadow:0 0 0 2px var(--diam)}
+.filterhint{margin-top:14px;text-align:center;font-size:13px;font-weight:600;color:var(--muted)}
+.filterhint b{color:var(--ink)}
+.filterhint .clr{color:var(--arthur);font-weight:700;margin-left:8px}
+/* Subcategoria Diamantes */
+#fSubcatWrap,#eSubcatWrap{display:none}
 </style>
 </head>
 <body>
@@ -283,27 +296,26 @@ nav.tabs button.fab .ti{width:46px;height:46px;border-radius:50%;background:var(
     </div>
 
     <div class="card total-card">
-      <div class="lbl">Total do mês</div>
-      <div class="val num" id="mTotal">R$ 0,00</div>
-      <div class="pd-chips" id="pdChips">
-        <div class="pd-chip"><span class="pdl">Pessoal</span><span class="pdv num" id="totPessoal">R$ 0,00</span></div>
-        <div class="pd-chip" id="diamChip"><span class="pdl">Diamantes</span><span class="pdv num" id="totDiam">R$ 0,00</span></div>
+      <div class="totlbl-wrap" data-filter="total">
+        <div class="lbl">Total do mês</div>
+        <div class="val num" id="mTotal">R$ 0,00</div>
       </div>
       <div class="split">
-        <div class="person arthur">
+        <div class="person arthur" data-filter="p0">
           <div class="who"><span class="dot arthur"></span><span id="lblA">Arthur</span></div>
           <div class="amt num" id="totA">R$ 0,00</div>
         </div>
-        <div class="person luana">
+        <div class="person luana" data-filter="p1">
           <div class="who"><span class="dot luana"></span><span id="lblL">Luana</span></div>
           <div class="amt num" id="totL">R$ 0,00</div>
         </div>
-        <div class="person diam" id="diamBox">
+        <div class="person diam" id="diamBox" data-filter="diam">
           <div class="who"><span class="dot diam"></span>Diamantes LHM</div>
           <div class="amt num" id="totD">R$ 0,00</div>
         </div>
       </div>
       <div class="splitbar"><i id="barA" style="background:var(--arthur)"></i><i id="barL" style="background:var(--luana)"></i><i id="barD" style="background:var(--diam)"></i></div>
+      <div class="filterhint" id="filterHint" style="display:none"></div>
     </div>
 
     <div class="section-title">Por categoria</div>
@@ -328,6 +340,10 @@ nav.tabs button.fab .ti{width:46px;height:46px;border-radius:50%;background:var(
     <label class="field">
       <span class="flabel">Categoria</span>
       <div class="chips" id="fCats"></div>
+    </label>
+    <label class="field" id="fSubcatWrap">
+      <span class="flabel">Subcategoria Diamantes (para o app da transportadora)</span>
+      <select class="input" id="fSubcat"></select>
     </label>
     <div class="btn-row" style="margin-bottom:14px">
       <label class="field" style="flex:1;margin:0">
@@ -529,11 +545,14 @@ const state = {
   selectMode: false,            // modo seleção múltipla no Extrato
   selected: new Set(),          // ids marcados p/ excluir
   expandedCats: new Set(),      // categorias abertas no card Início
+  inicioFilter: "total",        // total | p0 | p1 | diam  (filtro do card Início)
 };
 
-const APP_VERSION = "v13 — 25/08/2026";
+const APP_VERSION = "v14 — 26/08/2026";
 const MASTER_PW = "284284";
 const DIAMANTES = "Diamantes LHM";   // categoria = despesas da transportadora
+// subcategorias da Diamantes (usadas no app de gestão da transportadora; NÃO aparecem nos relatórios daqui)
+const DIAM_SUBCATS = ["Salário","Encargos trabalhistas","Impostos/Contador","Combustível","Manutenção","Pedágio","Pneu","Seguro/Rastreador","Outros"];
 
 const DEFAULT_CATS = ["Supermercado","Alimentação","Combustível","Transporte","Saúde","Farmácia",
   "Moradia/Contas","Telefone/Internet","Educação","Filhos","Lazer","Compras","Vestuário",
@@ -759,11 +778,12 @@ function parseCSV(text){
   let header=null, start=0;
   const h0=rows[0].map(c=>c.toLowerCase());
   if(h0.some(c=>/data|dia|descri|hist[oó]|lan[çc]|valor|montante|d[eé]bito|pagamento|compet|parcela/.test(c))){ header=h0; start=1; }
-  let iDate=-1,iDesc=-1,iVal=-1,iPay=-1,iParc=-1,iCat=-1;
+  let iDate=-1,iDesc=-1,iVal=-1,iPay=-1,iParc=-1,iCat=-1,iSub=-1;
   if(header){
     header.forEach((c,i)=>{
       if(iParc<0 && /parcela|presta[çc]|^obs|parc/.test(c)) iParc=i;
-      if(iCat<0 && /categoria|categ/.test(c)) iCat=i;
+      if(iSub<0 && /subcateg|sub[\s\-_]?cat/.test(c)) iSub=i;
+      if(iCat<0 && /categoria|categ/.test(c) && i!==iSub) iCat=i;
       if(iPay<0 && /pagamento|compet[êe]ncia|refer[êe]ncia|m[eê]s\s*(pag|ref|comp)|venc/.test(c)) iPay=i;
       if(iDate<0 && /data|dia/.test(c) && i!==iPay) iDate=i;
       if(iDesc<0 && /descri|hist[oó]|lan[çc]|estabelec|t[ií]tulo|movimenta/.test(c)) iDesc=i;
@@ -796,7 +816,8 @@ function parseCSV(text){
       const pay=payMonthToISO(row[iPay], iso); if(pay) iso=pay;
     }
     const catForced = (iCat>=0 && row[iCat]) ? String(row[iCat]).trim() : "";
-    if(iso && !isNaN(amount)) out.push({date:iso, amount, desc:desc||"Sem descrição", fitid:"", catForced});
+    const subForced = (iSub>=0 && row[iSub]) ? String(row[iSub]).trim() : "";
+    if(iso && !isNaN(amount)) out.push({date:iso, amount, desc:desc||"Sem descrição", fitid:"", catForced, subForced});
   }
   return out;
 }
@@ -910,6 +931,7 @@ function buildReview(txns){
     rows.push({
       date:t.date, amount:t.amount, rawAmount:t.amount, desc:t.desc, importKey:key,   // preserva o sinal (estorno = negativo)
       category:cat, learned:learned,
+      subcat: (cat===DIAMANTES && t.subForced) ? t.subForced : "",
       include: !isNoise && t.amount!==0,
     });
   }
@@ -935,36 +957,53 @@ function renderInicio(){
   const total=exps.reduce((s,e)=>s+e.amount,0);
   const p0=state.settings.people[0], p1=state.settings.people[1];
   const isDiam=e=>e.category===DIAMANTES;
-  // Diamantes por pessoa é subtraído de quem gastou
   const sum=arr=>arr.reduce((s,e)=>s+e.amount,0);
   const tA=sum(exps.filter(e=>e.person===p0 && !isDiam(e)));   // Arthur pessoal (sem Diamantes)
   const tL=sum(exps.filter(e=>e.person===p1 && !isDiam(e)));   // Luana pessoal (sem Diamantes)
   const tD=sum(exps.filter(isDiam));                            // Diamantes (de qualquer um)
-  const pessoal=tA+tL;
 
   el("mTotal").textContent=money(total);
-  el("totPessoal").textContent=money(pessoal);
-  el("totDiam").textContent=money(tD);
   el("lblA").textContent=p0; el("lblL").textContent=p1;
   el("totA").textContent=money(tA); el("totL").textContent=money(tL); el("totD").textContent=money(tD);
-  // esconde os elementos de Diamantes quando não há nada
   el("diamBox").style.display = tD!==0 ? "" : "none";
-  el("diamChip").style.display = tD!==0 ? "" : "none";
-  el("pdChips").style.display = tD!==0 ? "" : "none";
   const denom=(Math.abs(tA)+Math.abs(tL)+Math.abs(tD))||1;
   el("barA").style.width=(Math.abs(tA)/denom*100)+"%";
   el("barL").style.width=(Math.abs(tL)/denom*100)+"%";
   el("barD").style.width=(Math.abs(tD)/denom*100)+"%";
 
-  // categorias (expansíveis)
+  // se Diamantes sumiu e o filtro estava nela, volta pra total
+  if(state.inicioFilter==="diam" && tD===0) state.inicioFilter="total";
+
+  // filtro do card (por carteira)
+  const f=state.inicioFilter;
+  const subset = f==="p0" ? exps.filter(e=>e.person===p0 && !isDiam(e))
+              : f==="p1" ? exps.filter(e=>e.person===p1 && !isDiam(e))
+              : f==="diam" ? exps.filter(isDiam)
+              : exps;
+  const subTotal = sum(subset);
+
+  // realce do bloco selecionado + dica de filtro
+  document.querySelectorAll(".total-card [data-filter]").forEach(elm=>elm.classList.toggle("sel", elm.dataset.filter===f));
+  const fname = f==="p0"?p0 : f==="p1"?p1 : f==="diam"?"Diamantes LHM" : "";
+  const fh=el("filterHint");
+  if(f==="total"){ fh.style.display="none"; }
+  else{ fh.style.display=""; fh.innerHTML=`Filtrando por <b>${fname}</b><span class="clr" id="clrFilter">ver tudo ✕</span>`;
+        el("clrFilter").onclick=(ev)=>{ ev.stopPropagation(); state.inicioFilter="total"; renderInicio(); }; }
+
+  // clique nos blocos = filtro
+  document.querySelectorAll(".total-card [data-filter]").forEach(elm=>{
+    elm.onclick=()=>{ const nf=elm.dataset.filter; state.inicioFilter = (state.inicioFilter===nf && nf!=="total") ? "total" : nf; renderInicio(); };
+  });
+
+  // categorias (do subconjunto filtrado, expansíveis)
   const byCat={};
-  exps.forEach(e=>byCat[e.category]=(byCat[e.category]||0)+e.amount);
+  subset.forEach(e=>byCat[e.category]=(byCat[e.category]||0)+e.amount);
   const cats=Object.keys(byCat).sort((a,b)=>byCat[b]-byCat[a]);
   const cb=el("catBreakdown");
-  if(!cats.length){ cb.innerHTML=emptyBlock("📊","Nada lançado neste mês","Toque em Lançar ou Importar"); }
+  if(!cats.length){ cb.innerHTML=emptyBlock("📊","Nada neste filtro",""); }
   else{
     cb.innerHTML=cats.map(c=>{
-      const pct=Math.round(byCat[c]/(total||1)*100);
+      const pct=Math.round(byCat[c]/(subTotal||1)*100);
       const open=state.expandedCats.has(c);
       let html=`<div class="catrow expandable" data-cat="${c}">
         <span class="swatch" style="background:${catColor(c)}"></span>
@@ -975,7 +1014,7 @@ function renderInicio(){
         <span class="cbar" style="width:${pct}%;background:${catColor(c)}"></span>
       </div>`;
       if(open){
-        const txs=exps.filter(e=>e.category===c).sort((a,b)=> a.date<b.date?1:(a.date>b.date?-1:(b.createdAt||0)-(a.createdAt||0)));
+        const txs=subset.filter(e=>e.category===c).sort((a,b)=> a.date<b.date?1:(a.date>b.date?-1:(b.createdAt||0)-(a.createdAt||0)));
         html+=`<div class="catchildren">`+txs.map(txRow).join("")+`</div>`;
       }
       return html;
@@ -985,12 +1024,13 @@ function renderInicio(){
       if(state.expandedCats.has(c)) state.expandedCats.delete(c); else state.expandedCats.add(c);
       renderInicio();
     });
-    bindTxRows("catBreakdown");   // toca numa despesa -> editar/excluir (senha)
+    bindTxRows("catBreakdown");
   }
 
-  // recentes
-  const recent=[...exps].sort((a,b)=> a.date<b.date?1:(a.date>b.date?-1:(b.createdAt||0)-(a.createdAt||0))).slice(0,8);
-  el("recentTx").innerHTML = recent.length ? recent.map(txRow).join("") : emptyBlock("🧾","Sem lançamentos ainda","");
+  // recentes (do subconjunto; mostra mais quando filtrado)
+  const lim = f==="total" ? 8 : 60;
+  const recent=[...subset].sort((a,b)=> a.date<b.date?1:(a.date>b.date?-1:(b.createdAt||0)-(a.createdAt||0))).slice(0,lim);
+  el("recentTx").innerHTML = recent.length ? recent.map(txRow).join("") : emptyBlock("🧾","Sem lançamentos","");
   bindTxRows("recentTx");
 }
 
@@ -1091,7 +1131,11 @@ function renderLancarForm(){
   cats.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{
     cats.querySelectorAll(".chip").forEach(x=>x.classList.remove("sel"));
     b.classList.add("sel"); cats.dataset.sel=b.dataset.c;
+    el("fSubcatWrap").style.display = b.dataset.c===DIAMANTES ? "block" : "none";
   });
+  // popular subcategorias
+  el("fSubcat").innerHTML = DIAM_SUBCATS.map(s=>`<option>${s}</option>`).join("");
+  el("fSubcatWrap").style.display="none";
   el("fData").value=todayISO();
 }
 
@@ -1321,6 +1365,7 @@ function openEditSheet(id){
   const e=state.expenses.find(x=>x.id===id); if(!e) return;
   const catOpts=state.settings.categories.map(c=>`<option ${c===e.category?"selected":""}>${c}</option>`).join("");
   const whoOpts=state.settings.people.map(p=>`<option ${p===e.person?"selected":""}>${p}</option>`).join("");
+  const subOpts=DIAM_SUBCATS.map(s=>`<option ${s===e.subcat?"selected":""}>${s}</option>`).join("");
   openSheet(`
     <h3>Editar lançamento</h3>
     <label class="field"><span class="flabel">Valor</span>
@@ -1333,18 +1378,23 @@ function openEditSheet(id){
       <label class="field" style="flex:1;margin:0"><span class="flabel">Quem</span>
         <select class="input" id="eWho">${whoOpts}</select></label>
     </div>
+    <label class="field" id="eSubcatWrap" style="display:${e.category===DIAMANTES?'block':'none'}">
+      <span class="flabel">Subcategoria Diamantes</span>
+      <select class="input" id="eSubcat">${subOpts}</select></label>
     <label class="field"><span class="flabel">Data</span>
       <input class="input num" id="eData" type="date" value="${e.date}"></label>
     <div class="btn-row">
       <button class="btn danger" id="eDel" style="flex:1">Excluir</button>
       <button class="btn" id="eSave" style="flex:2">Salvar</button>
     </div>`);
+  el("eCat").onchange=()=>{ el("eSubcatWrap").style.display = el("eCat").value===DIAMANTES ? "block" : "none"; };
   el("eSave").onclick=()=>gate(()=>{
     const val=parseBRNumber(el("eVal").value);
     if(isNaN(val)||val===0){ toast("Valor inválido"); return; }
     const newCat=el("eCat").value;
     if(newCat!==e.category) { recordLearning(el("eDesc").value, newCat); persistLearn(); }  // corrigir também ensina
-    updateExpense(id,{amount:val,desc:el("eDesc").value.trim(),category:newCat,person:el("eWho").value,date:el("eData").value});
+    const subcat = newCat===DIAMANTES ? el("eSubcat").value : "";
+    updateExpense(id,{amount:val,desc:el("eDesc").value.trim(),category:newCat,person:el("eWho").value,date:el("eData").value,subcat});
     closeSheet(); toast("Atualizado");
   });
   el("eDel").onclick=()=>gate(()=>{ deleteExpense(id); closeSheet(); toast("Excluído"); });
@@ -1473,10 +1523,12 @@ el("fSalvar").onclick=()=>{
   if(isNaN(val)||val===0){ toast("Digite um valor válido"); return; }
   if(!cat){ toast("Escolha uma categoria"); return; }
   const desc=el("fDesc").value.trim();
-  addExpense({date:el("fData").value||todayISO(),amount:val,category:cat,person:who,desc,importKey:"",createdAt:Date.now()});
+  const subcat = cat===DIAMANTES ? el("fSubcat").value : "";
+  addExpense({date:el("fData").value||todayISO(),amount:val,category:cat,person:who,desc,subcat,importKey:"",createdAt:Date.now()});
   if(desc){ recordLearning(desc,cat); persistLearn(); }
   el("fValor").value=""; el("fDesc").value="";
   el("fCats").querySelectorAll(".chip").forEach(x=>x.classList.remove("sel")); delete el("fCats").dataset.sel;
+  el("fSubcatWrap").style.display="none";
   toast("Lançado ✓"); switchView("inicio");
 };
 
@@ -1495,7 +1547,7 @@ el("confirmImport").onclick=()=>{
   if(!chosen.length){ toast("Nada selecionado"); return; }
   const list=chosen.map(r=>{
     recordLearning(r.desc,r.category);
-    return {date:r.date,amount:r.amount,category:r.category,person:who,desc:r.desc,importKey:r.importKey,createdAt:Date.now()};
+    return {date:r.date,amount:r.amount,category:r.category,person:who,desc:r.desc,subcat:r.subcat||"",importKey:r.importKey,createdAt:Date.now()};
   });
   addManyExpenses(list); persistLearn();
   toast(`${list.length} lançamento(s) importado(s) ✓`);
