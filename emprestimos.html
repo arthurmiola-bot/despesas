@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Empréstimos</title>
+<meta name="theme-color" content="#F5F4EF">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F5F4EF;
+    --paper:#FFFFFF;
+    --ink:#1B1E1A;
+    --ink-soft:#63685F;
+    --ink-faint:#9A9E93;
+    --line:#E1DED2;
+    --line-soft:#EDEBE1;
+    --credito:#24594A;
+    --credito-bg:#E4EFE9;
+    --debito:#8C3F2C;
+    --debito-bg:#F2E6DF;
+    --usd:#2C4A66;
+    --usd-bg:#E4EAF0;
+    --brl-bg:#E4EFE9;
+    --warn:#A6531F;
+    --radius:14px;
+    --radius-sm:8px;
+    --shadow:0 1px 2px rgba(27,30,26,0.06);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'IBM Plex Sans',system-ui,sans-serif;
+    font-size:16px;
+    -webkit-font-smoothing:antialiased;
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  h1,h2,h3,.serif{font-family:'Source Serif 4',Georgia,serif;}
+  .num{font-variant-numeric:tabular-nums; font-feature-settings:"tnum" 1;}
+  button{font-family:inherit; cursor:pointer;}
+  input,select,textarea{font-family:inherit; font-size:16px;}
+
+  /* ---- App shell ---- */
+  #app{max-width:560px; margin:0 auto; min-height:100vh; background:var(--bg); position:relative; padding-bottom:96px;}
+
+  header.top{
+    position:sticky; top:0; z-index:20;
+    background:var(--bg); padding:18px 18px 8px;
+    border-bottom:1px solid transparent;
+  }
+  header.top.scrolled{border-bottom-color:var(--line);}
+  .top-row{display:flex; align-items:baseline; justify-content:space-between;}
+  header.top h1{font-size:26px; font-weight:600; margin:0; letter-spacing:-0.01em;}
+  #syncDot{width:7px; height:7px; border-radius:50%; background:var(--ink-faint); display:inline-block; margin-left:8px; vertical-align:middle; transition:background .3s;}
+  #syncDot.ok{background:var(--credito);}
+  #syncDot.off{background:var(--warn);}
+
+  .totals{display:flex; gap:10px; margin-top:14px; overflow-x:auto; padding-bottom:2px;}
+  .total-card{
+    flex:1 1 0; min-width:132px; background:var(--paper); border:1px solid var(--line);
+    border-radius:var(--radius); padding:12px 14px;
+  }
+  .total-card .lbl{font-size:12.5px; color:var(--ink-soft); margin-bottom:4px;}
+  .total-card .amt{font-size:19px; font-weight:600;}
+  .total-card.credito{border-left:3px solid var(--credito);}
+  .total-card.debito{border-left:3px solid var(--debito);}
+
+  .filters{display:flex; gap:6px; margin-top:16px; overflow-x:auto;}
+  .filters button{
+    flex:0 0 auto; background:transparent; border:1px solid var(--line); color:var(--ink-soft);
+    padding:7px 13px; border-radius:20px; font-size:13.5px; font-weight:500; white-space:nowrap;
+  }
+  .filters button.active{background:var(--ink); border-color:var(--ink); color:var(--paper);}
+
+  main{padding:14px 18px 8px;}
+  .empty{text-align:center; color:var(--ink-soft); padding:60px 20px; line-height:1.6;}
+  .empty .serif{font-size:19px; color:var(--ink); display:block; margin-bottom:6px;}
+
+  .card{
+    background:var(--paper); border:1px solid var(--line-soft); border-radius:var(--radius);
+    padding:14px 15px; margin-bottom:10px; box-shadow:var(--shadow);
+    border-left:3px solid var(--ink-faint); position:relative;
+  }
+  .card.tipo-emprestei{border-left-color:var(--credito);}
+  .card.tipo-tomei{border-left-color:var(--debito);}
+  .card.quitado{opacity:.55;}
+  .card-top{display:flex; justify-content:space-between; align-items:flex-start; gap:10px;}
+  .card-pessoa{font-size:16.5px; font-weight:600;}
+  .card-tag{font-size:11.5px; color:var(--ink-soft); margin-top:2px;}
+  .card-saldo{text-align:right;}
+  .card-saldo .amt{font-size:19px; font-weight:600;}
+  .card-saldo .moeda{font-size:11px; color:var(--ink-soft);}
+  .card-meta{display:flex; gap:12px; margin-top:10px; font-size:12.5px; color:var(--ink-soft); flex-wrap:wrap;}
+  .badge-quitado{display:inline-block; font-size:11px; background:var(--line-soft); color:var(--ink-soft); padding:2px 8px; border-radius:20px; margin-top:8px;}
+
+  /* ---- FAB ---- */
+  .fab{
+    position:fixed; right:calc(50% - 280px + 18px); bottom:24px; z-index:30;
+    width:56px; height:56px; border-radius:50%; background:var(--ink); color:var(--paper);
+    border:none; font-size:28px; display:flex; align-items:center; justify-content:center;
+    box-shadow:0 4px 14px rgba(27,30,26,0.28); line-height:0;
+  }
+  @media (max-width:596px){ .fab{right:18px;} }
+
+  /* ---- Sheet / modal ---- */
+  .sheet-backdrop{
+    position:fixed; inset:0; background:rgba(20,22,18,0.4); z-index:50;
+    opacity:0; pointer-events:none; transition:opacity .2s;
+  }
+  .sheet-backdrop.show{opacity:1; pointer-events:auto;}
+  .sheet{
+    position:fixed; left:0; right:0; bottom:0; z-index:51; background:var(--bg);
+    max-width:560px; margin:0 auto; border-radius:20px 20px 0 0;
+    max-height:92vh; display:flex; flex-direction:column;
+    transform:translateY(100%); transition:transform .25s cubic-bezier(.32,.72,0,1);
+    box-shadow:0 -6px 24px rgba(0,0,0,.15);
+  }
+  .sheet.show{transform:translateY(0);}
+  .sheet-handle{width:36px; height:4px; background:var(--line); border-radius:4px; margin:10px auto 2px;}
+  .sheet-head{display:flex; justify-content:space-between; align-items:center; padding:10px 18px 6px;}
+  .sheet-head h2{font-size:20px; margin:0; font-weight:600;}
+  .sheet-close{background:none; border:none; font-size:22px; color:var(--ink-soft); padding:4px 8px;}
+  .sheet-body{overflow-y:auto; padding:6px 18px 28px;}
+
+  .field{margin-bottom:16px;}
+  .field label{display:block; font-size:13px; color:var(--ink-soft); margin-bottom:6px; font-weight:500;}
+  .field input, .field select, .field textarea{
+    width:100%; border:1px solid var(--line); border-radius:var(--radius-sm); padding:11px 12px;
+    background:var(--paper); color:var(--ink);
+  }
+  .field textarea{resize:vertical; min-height:60px;}
+  .row2{display:flex; gap:10px;}
+  .row2 > .field{flex:1;}
+  .seg{display:flex; border:1px solid var(--line); border-radius:var(--radius-sm); overflow:hidden;}
+  .seg button{flex:1; padding:10px 8px; background:var(--paper); border:none; font-size:14px; color:var(--ink-soft); border-right:1px solid var(--line);}
+  .seg button:last-child{border-right:none;}
+  .seg button.active{background:var(--ink); color:var(--paper); font-weight:600;}
+
+  .btn-primary{
+    width:100%; background:var(--ink); color:var(--paper); border:none; border-radius:var(--radius-sm);
+    padding:14px; font-size:15.5px; font-weight:600; margin-top:6px;
+  }
+  .btn-primary:disabled{opacity:.4;}
+  .btn-secondary{
+    width:100%; background:transparent; color:var(--ink); border:1px solid var(--line); border-radius:var(--radius-sm);
+    padding:12px; font-size:14.5px; font-weight:500; margin-top:8px;
+  }
+  .btn-danger{color:var(--debito); border-color:var(--debito-bg);}
+
+  /* ---- Detail sheet ---- */
+  .detail-hero{background:var(--paper); border:1px solid var(--line-soft); border-radius:var(--radius); padding:18px; margin-bottom:16px;}
+  .detail-hero .amt{font-size:32px; font-weight:600; margin-top:2px;}
+  .detail-hero .sub{font-size:13px; color:var(--ink-soft); margin-top:4px;}
+  .kv-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px 14px; margin-top:14px;}
+  .kv{font-size:13.5px;}
+  .kv .k{color:var(--ink-soft); font-size:11.5px; margin-bottom:2px;}
+  .section-title{font-size:12.5px; text-transform:none; color:var(--ink-soft); margin:20px 0 8px; font-weight:600;}
+  .pay-row{display:flex; justify-content:space-between; padding:9px 0; border-bottom:1px solid var(--line-soft); font-size:14px;}
+  .pay-row:last-child{border-bottom:none;}
+  .pay-row .amt{font-weight:600;}
+  .pay-empty{color:var(--ink-faint); font-size:13.5px; padding:6px 0;}
+
+  .toast{
+    position:fixed; left:50%; bottom:28px; transform:translateX(-50%) translateY(20px);
+    background:var(--ink); color:var(--paper); padding:11px 18px; border-radius:30px; font-size:13.5px;
+    opacity:0; transition:all .25s; z-index:80; pointer-events:none; white-space:nowrap;
+  }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+
+  .config-box{
+    background:var(--paper); border:1px dashed var(--line); border-radius:var(--radius); padding:16px; margin:14px 18px; font-size:13.5px; color:var(--ink-soft); line-height:1.6;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header class="top" id="topHeader">
+    <div class="top-row">
+      <h1>Empréstimos<span id="syncDot"></span></h1>
+    </div>
+    <div class="totals" id="totalsRow"></div>
+    <div class="filters" id="filtersRow">
+      <button data-f="todos" class="active">Todos</button>
+      <button data-f="emprestei">A receber</button>
+      <button data-f="tomei">A pagar</button>
+      <button data-f="quitados">Quitados</button>
+    </div>
+  </header>
+
+  <main id="list"></main>
+
+  <button class="fab" id="fabAdd" aria-label="Novo empréstimo">+</button>
+</div>
+
+<div class="sheet-backdrop" id="backdrop"></div>
+
+<!-- Sheet: novo/editar empréstimo -->
+<div class="sheet" id="sheetForm">
+  <div class="sheet-handle"></div>
+  <div class="sheet-head"><h2 id="formTitle">Novo empréstimo</h2><button class="sheet-close" data-close>✕</button></div>
+  <div class="sheet-body">
+    <div class="field">
+      <label>Tipo</label>
+      <div class="seg" id="segTipo">
+        <button data-v="emprestei" class="active">Eu emprestei</button>
+        <button data-v="tomei">Eu tomei emprestado</button>
+      </div>
+    </div>
+    <div class="field">
+      <label>Pessoa</label>
+      <input type="text" id="fPessoa" placeholder="Nome do conhecido">
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>Moeda</label>
+        <div class="seg" id="segMoeda">
+          <button data-v="BRL" class="active">R$</button>
+          <button data-v="USD">US$</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Valor principal</label>
+        <input type="number" id="fPrincipal" placeholder="0,00" step="0.01" inputmode="decimal">
+      </div>
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>Taxa de juros (%)</label>
+        <input type="number" id="fTaxa" placeholder="ex: 2" step="0.01" inputmode="decimal">
+      </div>
+      <div class="field">
+        <label>A cada</label>
+        <div class="seg" id="segPeriodo">
+          <button data-v="30dias" class="active">30 dias</button>
+          <button data-v="mensal">Mensal</button>
+        </div>
+      </div>
+    </div>
+    <div class="field">
+      <label>Tipo de juros</label>
+      <div class="seg" id="segJuros">
+        <button data-v="simples" class="active">Simples</button>
+        <button data-v="composto">Composto</button>
+      </div>
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>Data de início</label>
+        <input type="date" id="fDataInicio">
+      </div>
+      <div class="field">
+        <label>Vencimento (opcional)</label>
+        <input type="date" id="fVencimento">
+      </div>
+    </div>
+    <div class="field">
+      <label>Observações (opcional)</label>
+      <textarea id="fObs" placeholder="Detalhes do combinado..."></textarea>
+    </div>
+    <button class="btn-primary" id="btnSalvarLoan">Salvar empréstimo</button>
+  </div>
+</div>
+
+<!-- Sheet: detalhe do empréstimo -->
+<div class="sheet" id="sheetDetail">
+  <div class="sheet-handle"></div>
+  <div class="sheet-head"><h2 id="detailPessoa">—</h2><button class="sheet-close" data-close>✕</button></div>
+  <div class="sheet-body" id="detailBody"></div>
+</div>
+
+<!-- Sheet: novo pagamento -->
+<div class="sheet" id="sheetPagamento">
+  <div class="sheet-handle"></div>
+  <div class="sheet-head"><h2>Registrar pagamento</h2><button class="sheet-close" data-close>✕</button></div>
+  <div class="sheet-body">
+    <div class="field">
+      <label>Data do pagamento</label>
+      <input type="date" id="pData">
+    </div>
+    <div class="field">
+      <label>Valor pago</label>
+      <input type="number" id="pValor" placeholder="0,00" step="0.01" inputmode="decimal">
+    </div>
+    <div class="field">
+      <label>Observação (opcional)</label>
+      <input type="text" id="pObs" placeholder="ex: pagamento parcial">
+    </div>
+    <button class="btn-primary" id="btnSalvarPagamento">Registrar pagamento</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+// ============================================================
+// CONFIG DO FIREBASE — cole aqui a config do projeto "nossas-contas-6c240"
+// (a mesma usada no Nossas Contas / Transportadora). Até preencher,
+// o app roda só localmente neste aparelho (localStorage).
+// ============================================================
+const firebaseConfig = {
+  apiKey: "",
+  authDomain: "",
+  projectId: "",
+  storageBucket: "",
+  messagingSenderId: "",
+  appId: ""
+};
+
+const COLLECTION = "emprestimos";
+let db = null, auth = null, useFirebase = false;
+let loans = [];
+let localOnly = false;
+
+// ---------- Boot: Firebase ou modo local ----------
+async function boot(){
+  if(firebaseConfig.apiKey){
+    try{
+      const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js");
+      const { getAuth, signInAnonymously, onAuthStateChanged } = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js");
+      const { initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+              collection, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp } =
+        await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js");
+
+      const app = initializeApp(firebaseConfig);
+      auth = getAuth(app);
+      db = initializeFirestore(app, {
+        localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+      });
+      window._fs = { collection, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp };
+
+      onAuthStateChanged(auth, (user)=>{
+        if(user){
+          useFirebase = true;
+          setSync('ok');
+          const colRef = collection(db, COLLECTION);
+          onSnapshot(colRef, (snap)=>{
+            loans = [];
+            snap.forEach(d=> loans.push({ id:d.id, ...d.data() }));
+            render();
+          }, (err)=>{
+            console.error(err);
+            setSync('off');
+          });
+        }
+      });
+      signInAnonymously(auth).catch(err=>{
+        console.error("Auth falhou, usando modo local:", err);
+        fallbackLocal();
+      });
+    }catch(err){
+      console.error("Firebase indisponível, usando modo local:", err);
+      fallbackLocal();
+    }
+  } else {
+    fallbackLocal();
+  }
+}
+
+function fallbackLocal(){
+  localOnly = true;
+  setSync('off');
+  try{
+    const raw = localStorage.getItem('emprestimos_local');
+    loans = raw ? JSON.parse(raw) : [];
+  }catch(e){ loans = []; }
+  render();
+}
+
+function saveLocal(){
+  localStorage.setItem('emprestimos_local', JSON.stringify(loans));
+}
+
+function setSync(state){
+  const dot = document.getElementById('syncDot');
+  dot.className = state === 'ok' ? 'ok' : 'off';
+  dot.title = state === 'ok' ? 'Sincronizado' : 'Somente neste aparelho';
+}
+
+// ---------- Persistência (abstrai Firebase / local) ----------
+async function persistLoan(loan){
+  if(useFirebase && db){
+    const { collection, doc, setDoc, serverTimestamp } = window._fs;
+    const ref = loan.id ? doc(db, COLLECTION, loan.id) : doc(collection(db, COLLECTION));
+    if(!loan.id) loan.id = ref.id;
+    const data = { ...loan };
+    if(!data.criadoEm) data.criadoEm = serverTimestamp();
+    setDoc(ref, data, { merge:true }).catch(err=>console.error(err));
+    // fire-and-forget: atualiza local otimisticamente
+    const idx = loans.findIndex(l=>l.id===loan.id);
+    if(idx>=0) loans[idx] = {...loans[idx], ...data}; else loans.push(data);
+  } else {
+    if(!loan.id) loan.id = 'L' + Date.now() + Math.random().toString(36).slice(2,7);
+    const idx = loans.findIndex(l=>l.id===loan.id);
+    if(idx>=0) loans[idx] = loan; else loans.push(loan);
+    saveLocal();
+  }
+  render();
+}
+
+async function removeLoan(id){
+  if(useFirebase && db){
+    const { doc, deleteDoc } = window._fs;
+    deleteDoc(doc(db, COLLECTION, id)).catch(err=>console.error(err));
+    loans = loans.filter(l=>l.id!==id);
+  } else {
+    loans = loans.filter(l=>l.id!==id);
+    saveLocal();
+  }
+  render();
+}
+
+// ---------- Cálculo de juros ----------
+function diasEntre(d1, d2){ return (d2 - d1) / 86400000; }
+
+function mesesEntre(d1, d2){
+  if(d2 <= d1) return 0;
+  let months = (d2.getFullYear()-d1.getFullYear())*12 + (d2.getMonth()-d1.getMonth());
+  let anchor = new Date(d1);
+  anchor.setMonth(anchor.getMonth()+months);
+  if(anchor > d2){
+    months -= 1;
+    anchor = new Date(d1);
+    anchor.setMonth(anchor.getMonth()+months);
+  }
+  let nextAnchor = new Date(anchor);
+  nextAnchor.setMonth(nextAnchor.getMonth()+1);
+  const periodDays = (nextAnchor - anchor) / 86400000;
+  const intoDays = (d2 - anchor) / 86400000;
+  const fraction = periodDays > 0 ? intoDays / periodDays : 0;
+  return months + fraction;
+}
+
+function periodosEntre(d1, d2, periodicidade){
+  if(d2 <= d1) return 0;
+  return periodicidade === '30dias' ? diasEntre(d1,d2)/30 : mesesEntre(d1,d2);
+}
+
+// Retorna { saldo, totalPago, jurosAcumulados } considerando pagamentos até ateData
+function calcularSaldo(loan, ateData){
+  const taxa = (parseFloat(loan.taxa)||0) / 100;
+  const pagamentos = (loan.pagamentos||[])
+    .filter(p => new Date(p.data+'T00:00:00') <= ateData)
+    .sort((a,b)=> new Date(a.data) - new Date(b.data));
+
+  let saldo = parseFloat(loan.principal)||0;
+  let totalPago = 0;
+  let dataRef = new Date(loan.dataInicio+'T00:00:00');
+
+  for(const p of pagamentos){
+    const dataPag = new Date(p.data+'T00:00:00');
+    const n = periodosEntre(dataRef, dataPag, loan.periodicidade);
+    if(n > 0){
+      saldo = loan.tipoJuros === 'composto'
+        ? saldo * Math.pow(1+taxa, n)
+        : saldo + saldo*taxa*n;
+    }
+    saldo -= parseFloat(p.valor)||0;
+    totalPago += parseFloat(p.valor)||0;
+    dataRef = dataPag;
+  }
+
+  const nFinal = periodosEntre(dataRef, ateData, loan.periodicidade);
+  if(nFinal > 0){
+    saldo = loan.tipoJuros === 'composto'
+      ? saldo * Math.pow(1+taxa, nFinal)
+      : saldo + saldo*taxa*nFinal;
+  }
+
+  return { saldo, totalPago };
+}
+
+// ---------- Formatação ----------
+function fmtMoeda(valor, moeda){
+  const v = Math.abs(valor);
+  const s = v.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+  const prefixo = moeda === 'USD' ? 'US$ ' : 'R$ ';
+  return (valor < -0.005 ? '-' : '') + prefixo + s;
+}
+function fmtData(iso){
+  if(!iso) return '—';
+  const [y,m,d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+function hojeISO(){
+  const d = new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+
+// ---------- Render ----------
+let filtroAtual = 'todos';
+
+function render(){
+  renderTotals();
+  renderList();
+}
+
+function renderTotals(){
+  const hoje = new Date();
+  const somas = { emprestei_BRL:0, emprestei_USD:0, tomei_BRL:0, tomei_USD:0 };
+  loans.forEach(l=>{
+    if(l.status === 'quitado') return;
+    const { saldo } = calcularSaldo(l, hoje);
+    somas[`${l.tipo}_${l.moeda}`] += saldo;
+  });
+  const el = document.getElementById('totalsRow');
+  el.innerHTML = `
+    <div class="total-card credito">
+      <div class="lbl">A receber · R$</div>
+      <div class="amt num">${fmtMoeda(somas.emprestei_BRL,'BRL')}</div>
+    </div>
+    <div class="total-card credito">
+      <div class="lbl">A receber · US$</div>
+      <div class="amt num">${fmtMoeda(somas.emprestei_USD,'USD')}</div>
+    </div>
+    <div class="total-card debito">
+      <div class="lbl">A pagar · R$</div>
+      <div class="amt num">${fmtMoeda(somas.tomei_BRL,'BRL')}</div>
+    </div>
+    <div class="total-card debito">
+      <div class="lbl">A pagar · US$</div>
+      <div class="amt num">${fmtMoeda(somas.tomei_USD,'USD')}</div>
+    </div>`;
+}
+
+function renderList(){
+  const hoje = new Date();
+  let lista = [...loans];
+  if(filtroAtual === 'emprestei') lista = lista.filter(l=>l.tipo==='emprestei' && l.status!=='quitado');
+  else if(filtroAtual === 'tomei') lista = lista.filter(l=>l.tipo==='tomei' && l.status!=='quitado');
+  else if(filtroAtual === 'quitados') lista = lista.filter(l=>l.status==='quitado');
+  else lista = lista.filter(l=>l.status!=='quitado');
+
+  lista.sort((a,b)=> new Date(b.dataInicio) - new Date(a.dataInicio));
+
+  const listEl = document.getElementById('list');
+  if(lista.length === 0){
+    listEl.innerHTML = `<div class="empty"><span class="serif">Nada por aqui</span>${filtroAtual==='quitados' ? 'Nenhum empréstimo quitado ainda.' : 'Toque em + para lançar um empréstimo.'}</div>`;
+    return;
+  }
+
+  listEl.innerHTML = lista.map(l=>{
+    const { saldo } = calcularSaldo(l, hoje);
+    const tipoLbl = l.tipo === 'emprestei' ? 'A receber de' : 'A pagar para';
+    const jurosLbl = `${l.taxa}% ${l.periodicidade==='30dias' ? 'a cada 30 dias' : 'ao mês'} · ${l.tipoJuros}`;
+    return `
+      <div class="card tipo-${l.tipo} ${l.status==='quitado'?'quitado':''}" data-id="${l.id}">
+        <div class="card-top">
+          <div>
+            <div class="card-pessoa">${escapeHtml(l.pessoa||'—')}</div>
+            <div class="card-tag">${tipoLbl}</div>
+          </div>
+          <div class="card-saldo">
+            <div class="amt num">${fmtMoeda(saldo, l.moeda)}</div>
+            <div class="moeda">${l.moeda === 'USD' ? 'dólares' : 'reais'}</div>
+          </div>
+        </div>
+        <div class="card-meta">
+          <span>${jurosLbl}</span>
+          <span>desde ${fmtData(l.dataInicio)}</span>
+        </div>
+        ${l.status==='quitado' ? '<div class="badge-quitado">Quitado</div>' : ''}
+      </div>`;
+  }).join('');
+
+  listEl.querySelectorAll('.card').forEach(card=>{
+    card.addEventListener('click', ()=> openDetail(card.dataset.id));
+  });
+}
+
+function escapeHtml(s){
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// ---------- Sheets ----------
+const backdrop = document.getElementById('backdrop');
+function openSheet(id){
+  document.getElementById(id).classList.add('show');
+  backdrop.classList.add('show');
+}
+function closeSheets(){
+  document.querySelectorAll('.sheet').forEach(s=>s.classList.remove('show'));
+  backdrop.classList.remove('show');
+}
+backdrop.addEventListener('click', closeSheets);
+document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click', closeSheets));
+
+// ---------- Filtros ----------
+document.getElementById('filtersRow').addEventListener('click', (e)=>{
+  const btn = e.target.closest('button[data-f]');
+  if(!btn) return;
+  document.querySelectorAll('#filtersRow button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  filtroAtual = btn.dataset.f;
+  renderList();
+});
+
+// ---------- Segmented controls ----------
+function setupSeg(id){
+  const seg = document.getElementById(id);
+  seg.addEventListener('click', (e)=>{
+    const btn = e.target.closest('button');
+    if(!btn) return;
+    seg.querySelectorAll('button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+  });
+}
+['segTipo','segMoeda','segPeriodo','segJuros'].forEach(setupSeg);
+function segValue(id){ return document.querySelector(`#${id} button.active`).dataset.v; }
+function segSet(id, v){
+  document.querySelectorAll(`#${id} button`).forEach(b=> b.classList.toggle('active', b.dataset.v===v));
+}
+
+// ---------- Novo empréstimo ----------
+let editingId = null;
+document.getElementById('fabAdd').addEventListener('click', ()=>{
+  editingId = null;
+  document.getElementById('formTitle').textContent = 'Novo empréstimo';
+  document.getElementById('fPessoa').value = '';
+  document.getElementById('fPrincipal').value = '';
+  document.getElementById('fTaxa').value = '';
+  document.getElementById('fDataInicio').value = hojeISO();
+  document.getElementById('fVencimento').value = '';
+  document.getElementById('fObs').value = '';
+  segSet('segTipo','emprestei'); segSet('segMoeda','BRL'); segSet('segPeriodo','30dias'); segSet('segJuros','simples');
+  openSheet('sheetForm');
+});
+
+document.getElementById('btnSalvarLoan').addEventListener('click', async ()=>{
+  const pessoa = document.getElementById('fPessoa').value.trim();
+  const principal = parseFloat(document.getElementById('fPrincipal').value);
+  const taxa = parseFloat(document.getElementById('fTaxa').value);
+  const dataInicio = document.getElementById('fDataInicio').value;
+
+  if(!pessoa){ showToast('Informe o nome da pessoa'); return; }
+  if(!principal || principal <= 0){ showToast('Informe o valor do empréstimo'); return; }
+  if(isNaN(taxa) || taxa < 0){ showToast('Informe a taxa de juros'); return; }
+  if(!dataInicio){ showToast('Informe a data de início'); return; }
+
+  const loan = {
+    id: editingId,
+    tipo: segValue('segTipo'),
+    moeda: segValue('segMoeda'),
+    periodicidade: segValue('segPeriodo'),
+    tipoJuros: segValue('segJuros'),
+    pessoa,
+    principal,
+    taxa,
+    dataInicio,
+    vencimento: document.getElementById('fVencimento').value || null,
+    observacoes: document.getElementById('fObs').value.trim(),
+    status: 'ativo',
+    pagamentos: editingId ? (loans.find(l=>l.id===editingId)?.pagamentos || []) : []
+  };
+
+  await persistLoan(loan);
+  closeSheets();
+  showToast(editingId ? 'Empréstimo atualizado' : 'Empréstimo salvo');
+});
+
+// ---------- Detalhe ----------
+let currentDetailId = null;
+
+function openDetail(id){
+  currentDetailId = id;
+  renderDetail();
+  openSheet('sheetDetail');
+}
+
+function renderDetail(){
+  const loan = loans.find(l=>l.id===currentDetailId);
+  if(!loan) return;
+  const hoje = new Date();
+  const { saldo, totalPago } = calcularSaldo(loan, hoje);
+
+  document.getElementById('detailPessoa').textContent = loan.pessoa;
+
+  const pagamentosHtml = (loan.pagamentos && loan.pagamentos.length)
+    ? loan.pagamentos.slice().sort((a,b)=> new Date(b.data)-new Date(a.data)).map(p=>`
+        <div class="pay-row">
+          <span>${fmtData(p.data)}${p.obs ? ' · '+escapeHtml(p.obs) : ''}</span>
+          <span class="amt num">${fmtMoeda(p.valor, loan.moeda)}</span>
+        </div>`).join('')
+    : '<div class="pay-empty">Nenhum pagamento registrado ainda.</div>';
+
+  document.getElementById('detailBody').innerHTML = `
+    <div class="detail-hero">
+      <div class="sub">${loan.tipo==='emprestei' ? 'Saldo a receber' : 'Saldo a pagar'} · ${loan.status==='quitado' ? 'quitado' : 'em aberto'}</div>
+      <div class="amt num">${fmtMoeda(saldo, loan.moeda)}</div>
+      <div class="kv-grid">
+        <div class="kv"><div class="k">Principal</div>${fmtMoeda(loan.principal, loan.moeda)}</div>
+        <div class="kv"><div class="k">Total pago</div>${fmtMoeda(totalPago, loan.moeda)}</div>
+        <div class="kv"><div class="k">Taxa</div>${loan.taxa}% ${loan.periodicidade==='30dias'?'a cada 30 dias':'ao mês'} (${loan.tipoJuros})</div>
+        <div class="kv"><div class="k">Início</div>${fmtData(loan.dataInicio)}</div>
+        <div class="kv"><div class="k">Vencimento</div>${loan.vencimento ? fmtData(loan.vencimento) : 'não definido'}</div>
+        <div class="kv"><div class="k">Moeda</div>${loan.moeda==='USD'?'Dólares (US$)':'Reais (R$)'}</div>
+      </div>
+      ${loan.observacoes ? `<div class="kv" style="margin-top:12px;"><div class="k">Observações</div>${escapeHtml(loan.observacoes)}</div>` : ''}
+    </div>
+
+    ${loan.status!=='quitado' ? '<button class="btn-primary" id="btnAddPagamento">Registrar pagamento</button>' : ''}
+
+    <div class="section-title">Histórico de pagamentos</div>
+    ${pagamentosHtml}
+
+    <div class="section-title">Empréstimo</div>
+    <button class="btn-secondary" id="btnEditarLoan">Editar dados do empréstimo</button>
+    ${loan.status!=='quitado'
+      ? '<button class="btn-secondary" id="btnQuitarLoan">Marcar como quitado</button>'
+      : '<button class="btn-secondary" id="btnReabrirLoan">Reabrir empréstimo</button>'}
+    <button class="btn-secondary btn-danger" id="btnExcluirLoan">Excluir empréstimo</button>
+  `;
+
+  const btnAdd = document.getElementById('btnAddPagamento');
+  if(btnAdd) btnAdd.addEventListener('click', ()=>{
+    document.getElementById('pData').value = hojeISO();
+    document.getElementById('pValor').value = '';
+    document.getElementById('pObs').value = '';
+    openSheet('sheetPagamento');
+  });
+
+  document.getElementById('btnEditarLoan').addEventListener('click', ()=>{
+    editingId = loan.id;
+    document.getElementById('formTitle').textContent = 'Editar empréstimo';
+    document.getElementById('fPessoa').value = loan.pessoa;
+    document.getElementById('fPrincipal').value = loan.principal;
+    document.getElementById('fTaxa').value = loan.taxa;
+    document.getElementById('fDataInicio').value = loan.dataInicio;
+    document.getElementById('fVencimento').value = loan.vencimento || '';
+    document.getElementById('fObs').value = loan.observacoes || '';
+    segSet('segTipo', loan.tipo); segSet('segMoeda', loan.moeda);
+    segSet('segPeriodo', loan.periodicidade); segSet('segJuros', loan.tipoJuros);
+    closeSheets();
+    setTimeout(()=>openSheet('sheetForm'), 180);
+  });
+
+  const btnQuitar = document.getElementById('btnQuitarLoan');
+  if(btnQuitar) btnQuitar.addEventListener('click', async ()=>{
+    await persistLoan({ ...loan, status:'quitado' });
+    renderDetail();
+    showToast('Empréstimo marcado como quitado');
+  });
+
+  const btnReabrir = document.getElementById('btnReabrirLoan');
+  if(btnReabrir) btnReabrir.addEventListener('click', async ()=>{
+    await persistLoan({ ...loan, status:'ativo' });
+    renderDetail();
+    showToast('Empréstimo reaberto');
+  });
+
+  document.getElementById('btnExcluirLoan').addEventListener('click', async ()=>{
+    if(confirm(`Excluir o empréstimo de ${loan.pessoa}? Essa ação não pode ser desfeita.`)){
+      await removeLoan(loan.id);
+      closeSheets();
+      showToast('Empréstimo excluído');
+    }
+  });
+}
+
+document.getElementById('btnSalvarPagamento').addEventListener('click', async ()=>{
+  const loan = loans.find(l=>l.id===currentDetailId);
+  if(!loan) return;
+  const data = document.getElementById('pData').value;
+  const valor = parseFloat(document.getElementById('pValor').value);
+  const obs = document.getElementById('pObs').value.trim();
+  if(!data){ showToast('Informe a data do pagamento'); return; }
+  if(!valor || valor <= 0){ showToast('Informe o valor pago'); return; }
+
+  const pagamentos = [...(loan.pagamentos||[]), { data, valor, obs }];
+  await persistLoan({ ...loan, pagamentos });
+  closeSheets();
+  renderDetail();
+  showToast('Pagamento registrado');
+});
+
+// ---------- Toast ----------
+let toastTimer = null;
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=> t.classList.remove('show'), 2200);
+}
+
+// ---------- Scroll shadow no header ----------
+document.addEventListener('scroll', ()=>{
+  document.getElementById('topHeader').classList.toggle('scrolled', window.scrollY > 4);
+}, { passive:true });
+
+// ---------- Service worker (cache básico do shell, nunca intercepta Firestore) ----------
+if('serviceWorker' in navigator){
+  const swCode = `
+    self.addEventListener('install', e => self.skipWaiting());
+    self.addEventListener('activate', e => self.clients.claim());
+    self.addEventListener('fetch', e => {
+      if(e.request.url.includes('firestore.googleapis.com')) return;
+    });
+  `;
+  const swBlob = new Blob([swCode], { type:'text/javascript' });
+  navigator.serviceWorker.register(URL.createObjectURL(swBlob)).catch(()=>{});
+}
+
+boot();
+</script>
+</body>
+</html>
