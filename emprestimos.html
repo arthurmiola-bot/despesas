@@ -316,10 +316,23 @@ const COLLECTION = "emprestimos";
 let db = null, auth = null, useFirebase = false;
 let loans = [];
 let localOnly = false;
+// Trava operações de escrita até sabermos, com certeza, se estamos no Firebase ou no modo local —
+// evita que um empréstimo cadastrado nos primeiros segundos (antes do login terminar) vá parar
+// só no armazenamento local do aparelho e "suma" quando a lista do Firebase chegar.
+let appReady = false;
 
 // ---------- Boot: Firebase ou modo local ----------
 async function boot(){
   if(firebaseConfig.apiKey){
+    setSync('connecting');
+    // Rede de segurança: se em 8s a conexão não resolveu de nenhum jeito, cai pro modo local
+    const bootTimeout = setTimeout(()=>{
+      if(!appReady){
+        console.warn('Tempo esgotado conectando ao Firebase, usando modo local');
+        fallbackLocal();
+      }
+    }, 8000);
+
     try{
       const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js");
       const { getAuth, signInAnonymously, onAuthStateChanged } = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js");
@@ -336,6 +349,7 @@ async function boot(){
 
       onAuthStateChanged(auth, (user)=>{
         if(user){
+          clearTimeout(bootTimeout);
           useFirebase = true;
           setSync('ok');
           const colRef = collection(db, COLLECTION);
@@ -343,6 +357,10 @@ async function boot(){
             loans = [];
             snap.forEach(d=> loans.push({ id:d.id, ...d.data() }));
             render();
+            if(!appReady){
+              appReady = true;
+              migrarDadosLocais();
+            }
           }, (err)=>{
             console.error(err);
             setSync('off');
@@ -350,10 +368,12 @@ async function boot(){
         }
       });
       signInAnonymously(auth).catch(err=>{
+        clearTimeout(bootTimeout);
         console.error("Auth falhou, usando modo local:", err);
         fallbackLocal();
       });
     }catch(err){
+      clearTimeout(bootTimeout);
       console.error("Firebase indisponível, usando modo local:", err);
       fallbackLocal();
     }
@@ -362,8 +382,25 @@ async function boot(){
   }
 }
 
+// Se, num acesso anterior, algum empréstimo tiver sido salvo só localmente
+// (por ex. cadastrado antes da conexão terminar), manda pro Firebase agora e limpa o local.
+function migrarDadosLocais(){
+  try{
+    const raw = localStorage.getItem('emprestimos_local');
+    if(!raw) return;
+    const pendentes = JSON.parse(raw) || [];
+    if(!pendentes.length){ localStorage.removeItem('emprestimos_local'); return; }
+    pendentes.forEach(l => persistLoan({ ...l }));
+    localStorage.removeItem('emprestimos_local');
+    showToast(`${pendentes.length} empréstimo(s) salvo(s) localmente foram enviados ao Firebase`);
+  }catch(e){
+    console.error('Erro ao migrar dados locais para o Firebase:', e);
+  }
+}
+
 function fallbackLocal(){
   localOnly = true;
+  appReady = true;
   setSync('off');
   try{
     const raw = localStorage.getItem('emprestimos_local');
@@ -378,8 +415,9 @@ function saveLocal(){
 
 function setSync(state){
   const dot = document.getElementById('syncDot');
-  dot.className = state === 'ok' ? 'ok' : 'off';
-  dot.title = state === 'ok' ? 'Sincronizado' : 'Somente neste aparelho';
+  if(state === 'ok'){ dot.className = 'ok'; dot.title = 'Sincronizado com o Firebase'; }
+  else if(state === 'connecting'){ dot.className = ''; dot.title = 'Conectando ao Firebase...'; }
+  else { dot.className = 'off'; dot.title = 'Somente neste aparelho'; }
 }
 
 // ---------- Persistência (abstrai Firebase / local) ----------
@@ -491,6 +529,10 @@ function hojeISO(){
   const d = new Date();
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
+// "Hoje" sempre à meia-noite local — evita que os juros mudem conforme a hora do dia
+function hojeDate(){
+  return new Date(hojeISO()+'T00:00:00');
+}
 
 // ---------- Render ----------
 let filtroAtual = 'todos';
@@ -501,7 +543,7 @@ function render(){
 }
 
 function renderTotals(){
-  const hoje = new Date();
+  const hoje = hojeDate();
   const somas = { emprestei_BRL:0, emprestei_USD:0, tomei_BRL:0, tomei_USD:0 };
   loans.forEach(l=>{
     if(l.status === 'quitado') return;
@@ -529,7 +571,7 @@ function renderTotals(){
 }
 
 function renderList(){
-  const hoje = new Date();
+  const hoje = hojeDate();
   let lista = [...loans];
   if(filtroAtual === 'emprestei') lista = lista.filter(l=>l.tipo==='emprestei' && l.status!=='quitado');
   else if(filtroAtual === 'tomei') lista = lista.filter(l=>l.tipo==='tomei' && l.status!=='quitado');
@@ -621,6 +663,7 @@ function segSet(id, v){
 // ---------- Novo empréstimo ----------
 let editingId = null;
 document.getElementById('fabAdd').addEventListener('click', ()=>{
+  if(!appReady){ showToast('Conectando... aguarde um instante e tente de novo'); return; }
   editingId = null;
   document.getElementById('formTitle').textContent = 'Novo empréstimo';
   document.getElementById('fPessoa').value = '';
@@ -634,6 +677,7 @@ document.getElementById('fabAdd').addEventListener('click', ()=>{
 });
 
 document.getElementById('btnSalvarLoan').addEventListener('click', async ()=>{
+  if(!appReady){ showToast('Conectando... aguarde um instante e tente de novo'); return; }
   const pessoa = document.getElementById('fPessoa').value.trim();
   const principal = parseFloat(document.getElementById('fPrincipal').value);
   const taxa = parseFloat(document.getElementById('fTaxa').value);
@@ -677,7 +721,7 @@ function openDetail(id){
 function renderDetail(){
   const loan = loans.find(l=>l.id===currentDetailId);
   if(!loan) return;
-  const hoje = new Date();
+  const hoje = hojeDate();
   const { saldo, totalPago } = calcularSaldo(loan, hoje);
 
   document.getElementById('detailPessoa').textContent = loan.pessoa;
@@ -765,6 +809,7 @@ function renderDetail(){
 }
 
 document.getElementById('btnSalvarPagamento').addEventListener('click', async ()=>{
+  if(!appReady){ showToast('Conectando... aguarde um instante e tente de novo'); return; }
   const loan = loans.find(l=>l.id===currentDetailId);
   if(!loan) return;
   const data = document.getElementById('pData').value;
